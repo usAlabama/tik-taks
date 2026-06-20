@@ -1,0 +1,2927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>Luxury · Clock</title>
+
+    <style>
+        :root {
+            --bg: #05090b;
+            --surface: #0a1216;
+            --border: #14242b;
+            --text-secondary: #4a6b75;
+
+            --accent: #2dd4bf;
+            --accent-rgb: 45, 212, 191;
+
+            --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.7);
+            --shadow-medium: 0 8px 40px rgba(0, 0, 0, 0.8);
+            --shadow-strong: 0 20px 60px rgba(0, 0, 0, 0.9);
+            --transition-smooth: 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+            --transition-fast: 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+            --font-display: 'Georgia', 'Times New Roman', 'Palatino Linotype', 'Book Antiqua', serif;
+            --font-ui: 'Inter', 'Segoe UI', 'Helvetica Neue', 'Arial', sans-serif;
+			
+			--sessionbar-height: 12px; /* высота полосы; меняй тут при необходимости */
+			
+            /* Tickers */
+            --ticker-height: 30px;
+            --ticker-font-size: 12px;
+            --ticker-gap: 26px;
+            --top-ticker-height: 30px;
+            --bottom-ticker-height: 30px;
+
+            --up: #22c55e;
+            --down: #ef4444;
+			
+			--sessionbar-legend-height: 16px; /* высота зоны с подписями под шкалой */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        [hidden] { display: none !important; }
+
+        body {
+            background: var(--bg);
+            font-family: var(--font-ui);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-font-smoothing: antialiased;
+            transition: background var(--transition-smooth);
+            cursor: default;
+        }
+
+        body.focus-mode {
+            background: #000000;
+            cursor: none;
+        }
+
+        body.focus-mode .ui-top-bar,
+        body.focus-mode .settings-panel,
+        body.focus-mode .bottom-indicators {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+        }
+
+        body.ui-hidden .ui-top-bar,
+        body.ui-hidden .bottom-indicators {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease;
+        }
+
+        body.ui-hidden .settings-panel.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #app {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            padding: calc(20px + var(--top-ticker-height) + var(--sessionbar-height) + var(--sessionbar-legend-height)) 20px calc(20px + var(--bottom-ticker-height)) 20px;
+        }
+
+        /* ─────────────────────────────────────
+           TICKERS
+        ───────────────────────────────────── */
+        .ticker {
+            position: fixed;
+            left: 0;
+            right: 0;
+            height: var(--ticker-height);
+            z-index: 80;
+            color: rgba(209, 228, 232, 0.86);
+            font-size: var(--ticker-font-size);
+            letter-spacing: 0.25px;
+            line-height: var(--ticker-height);
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            text-rendering: geometricPrecision;
+        }
+        .ticker--top { top: 0; }
+        .ticker--bottom { bottom: 10px; }
+
+        .ticker__viewport {
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 7%, black 93%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, black 7%, black 93%, transparent 100%);
+        }
+
+        .ticker__track {
+            height: 100%;
+            display: flex;
+            flex-wrap: nowrap;
+            width: max-content;
+            will-change: transform;
+            transform: translate3d(0,0,0);
+
+            animation-name: tickerScroll;
+            animation-duration: var(--ticker-duration, 28s);
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+        }
+
+        .ticker.paused .ticker__track { animation-play-state: paused; }
+
+        @keyframes tickerScroll {
+            from { transform: translate3d(0, 0, 0); }
+            to { transform: translate3d(calc(-1 * var(--ticker-distance, 1200px)), 0, 0); }
+        }
+
+        .ticker__content {
+            height: 100%;
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            gap: var(--ticker-gap);
+            padding-left: var(--ticker-gap);
+        }
+
+        .ticker__item {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 8px;
+            opacity: 0.98;
+        }
+
+        .ticker__sym {
+            color: rgba(var(--accent-rgb), 0.95);
+            font-weight: 600;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+        }
+
+        .ticker__price {
+            color: rgba(209, 228, 232, 0.92);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .ticker__price.up { color: var(--up); }
+        .ticker__price.down { color: var(--down); }
+
+        .ticker__chg { font-variant-numeric: tabular-nums; font-weight: 600; }
+        .ticker__chg.up { color: var(--up); }
+        .ticker__chg.down { color: var(--down); }
+        .ticker__chg.flat { color: rgba(209, 228, 232, 0.65); font-weight: 500; }
+
+        .ticker__meta { color: rgba(209, 228, 232, 0.58); font-weight: 500; }
+
+		.ticker__sep {
+			font-weight: 700;
+			letter-spacing: 0;
+			opacity: 0.95;
+		}
+		.ticker__sep.up { color: var(--up); }
+		.ticker__sep.down { color: var(--down); }
+		.ticker__sep.flat { color: rgba(209, 228, 232, 0.45); }
+
+        .ticker a {
+            color: rgba(209, 228, 232, 0.88);
+            text-decoration: none;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+        .ticker a:hover { color: rgba(var(--accent-rgb), 0.95); }
+		
+		#rssTicker .ticker__price {
+			font-size: calc(var(--ticker-font-size) * 1.15);
+		}
+		
+		#rssTicker {
+			--ticker-height: calc(var(--ticker-height) * 1.15);
+		}
+
+		/* RSS: курсив для текста уведомлений (заголовков/ссылок) */
+		#rssTicker .ticker__price,
+		#rssTicker .ticker__price a,
+		#rssTicker .ticker__price span {
+			font-style: italic;
+		}
+		
+		/* ─────────────────────────────────────
+		   SESSION BAR (under market ticker)
+		───────────────────────────────────── */
+		.session-bar{
+			position: fixed;
+			left: 0;
+			right: 0;
+			top: var(--top-ticker-height);
+			height: calc(var(--sessionbar-height) + var(--sessionbar-legend-height));
+			z-index: 85;
+			pointer-events: none;
+		}
+
+		.session-bar__track{
+			position: relative;
+			height: 100%;
+			background: rgba(10, 18, 22, 0.35);
+			backdrop-filter: blur(10px);
+			-webkit-backdrop-filter: blur(10px);
+			border-top: 1px solid rgba(20, 36, 43, 0.75);
+			border-bottom: 1px solid rgba(20, 36, 43, 0.55);
+			overflow: hidden;
+			height: var(--sessionbar-height);
+
+			/* мелкие часовые риски (24 часа) + более заметные каждые 6 часов */
+			background-image:
+				repeating-linear-gradient(
+					to right,
+					rgba(209, 228, 232, 0.01) 0,
+					rgba(209, 228, 232, 0.01) 1px,
+					transparent 1px,
+					transparent calc(100% / 24)
+				),
+				repeating-linear-gradient(
+					to right,
+					rgba(209, 228, 232, 0.02) 0,
+					rgba(209, 228, 232, 0.02) 1px,
+					transparent 1px,
+					transparent calc(100% / 4)
+				);
+		}
+
+		.session-bar__segments,
+		.session-bar__markers{
+			position: absolute;
+			inset: 0;
+		}
+
+		/* Сегменты сессий (накладываются полупрозрачно → видны overlaps) */
+		.session-bar__seg{
+			position: absolute;
+			top: 0;
+			bottom: 0;
+		}
+
+		/* Маркеры open/close */
+		.session-bar__marker{
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			width: 2px;
+			opacity: 0.95;
+		}
+
+		/* open чуть ярче, close чуть темнее */
+		.session-bar__marker.open { background: rgba(209, 228, 232, 0.55); }
+		.session-bar__marker.close { background: rgba(209, 228, 232, 0.28); }
+
+		/* Указатель "сейчас" */
+		.session-bar__now{
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			width: 2px;
+			background: rgba(var(--accent-rgb), 0.95);
+			box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.35);
+		}
+		
+		.session-bar__legend{
+			height: var(--sessionbar-legend-height);
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 0 10px;
+			gap: 10px;
+
+			color: rgba(209, 228, 232, 0.58);
+			font-size: 10px;
+			line-height: var(--sessionbar-legend-height);
+			letter-spacing: 0.2px;
+			white-space: nowrap;
+			overflow: hidden;
+		}
+
+		.session-bar__legend-left{
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			min-width: 0;
+			overflow: hidden;
+		}
+
+		.session-bar__tag{
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			opacity: 0.95;
+		}
+
+		.session-bar__dot{
+			width: 6px;
+			height: 6px;
+			border-radius: 50%;
+			background: var(--c, rgba(255,255,255,0.3));
+			box-shadow: 0 0 0 1px rgba(0,0,0,0.35) inset;
+			flex: 0 0 auto;
+		}
+
+		.session-bar__legend-right{
+			color: rgba(var(--accent-rgb), 0.85);
+			font-variant-numeric: tabular-nums;
+			flex: 0 0 auto;
+		}
+
+        /* ─────────────────────────────────────
+           CLOCK CANVAS
+        ───────────────────────────────────── */
+        .canvas-container {
+            position: relative;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: min(85vw, 85dvh, 550px);
+            height: min(85vw, 85dvh, 550px);
+            transition: width 0.5s cubic-bezier(0.25, 0.1, 0.25, 1), height 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+        }
+
+        .canvas-container.calibrating {
+            animation: clockSettle 1.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+        }
+
+        @keyframes clockSettle {
+            0% { transform: scale(1.04); filter: blur(1px); }
+            40% { transform: scale(0.97); filter: blur(0px); }
+            70% { transform: scale(1.008); }
+            100% { transform: scale(1); filter: blur(0); }
+        }
+
+        canvas { display: block; width: 100%; height: 100%; border-radius: 50%; }
+
+        .ui-top-bar {
+            position: fixed;
+            top: calc(var(--top-ticker-height) + var(--sessionbar-height) + var(--sessionbar-legend-height));
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 16px 20px;
+            gap: 8px;
+            z-index: 100;
+            pointer-events: none;
+            transition: opacity var(--transition-smooth);
+        }
+        .ui-top-bar > * { pointer-events: auto; }
+
+        .btn-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: rgba(10, 18, 22, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all var(--transition-fast);
+            box-shadow: var(--shadow-soft);
+            position: relative;
+        }
+
+        .btn-icon:hover {
+            background: rgba(20, 36, 43, 0.9);
+            border-color: var(--accent);
+            box-shadow: var(--shadow-medium), 0 0 24px rgba(var(--accent-rgb), 0.15);
+            transform: translateY(-1px);
+        }
+
+        .btn-icon:active { transform: scale(0.94); transition: transform 0.1s ease; }
+        .btn-icon.active {
+            background: rgba(20, 36, 43, 0.9);
+            border-color: var(--accent);
+            box-shadow: 0 0 28px rgba(var(--accent-rgb), 0.2);
+        }
+
+        .btn-icon .tooltip {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: var(--surface);
+            color: var(--accent);
+            font-size: 11px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            letter-spacing: 0.3px;
+            font-family: var(--font-ui);
+            border: 1px solid var(--border);
+        }
+        .btn-icon:hover .tooltip { opacity: 1; }
+
+        .bottom-indicators {
+            position: fixed;
+            bottom: calc(var(--bottom-ticker-height) + 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 90;
+            transition: opacity var(--transition-smooth);
+        }
+
+        .time-display {
+            font-family: var(--font-display);
+            font-size: 15px;
+            letter-spacing: 2px;
+            color: var(--text-secondary);
+            background: rgba(10, 18, 22, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 8px 18px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-soft);
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 380px;
+            max-width: 92vw;
+            background: rgba(10, 18, 22, 0.97);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border-left: 1px solid var(--border);
+            z-index: 200;
+            transform: translateX(105%);
+            transition: transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1);
+            box-shadow: -8px 0 60px rgba(0, 0, 0, 0.7);
+            overflow-y: auto;
+            padding: 24px 20px 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .settings-panel.open { transform: translateX(0); }
+        .settings-panel::-webkit-scrollbar { width: 4px; }
+        .settings-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        .settings-panel h3 {
+            font-family: var(--font-display);
+            font-size: 20px;
+            letter-spacing: 1px;
+            color: var(--accent);
+            margin: 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .settings-section { display: flex; flex-direction: column; gap: 8px; }
+
+        .settings-section label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .settings-note { font-size: 12px; color: rgba(209, 228, 232, 0.72); line-height: 1.35; }
+
+        .divider { height: 1px; background: rgba(20, 36, 43, 0.75); border: none; margin: 6px 0 2px 0; }
+
+        .color-picker-row { display: flex; align-items: center; gap: 12px; }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            cursor: pointer;
+            padding: 0;
+            background: none;
+            box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.2);
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 2px solid var(--border); border-radius: 50%; }
+
+        .slider-group { display: flex; align-items: center; gap: 10px; }
+        .slider-group input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border);
+            outline: none;
+            cursor: pointer;
+        }
+        .slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 2px solid var(--accent);
+            cursor: pointer;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .slider-val { font-size: 11px; color: var(--text-secondary); min-width: 52px; text-align: right; }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            gap: 12px;
+        }
+        .toggle-row span { font-size: 13px; color: #d1e4e8; letter-spacing: 0.3px; }
+
+        .toggle-switch {
+            width: 44px;
+            height: 26px;
+            border-radius: 13px;
+            background: var(--border);
+            cursor: pointer;
+            position: relative;
+            transition: background var(--transition-fast);
+            flex-shrink: 0;
+        }
+        .toggle-switch.on { background: var(--accent); }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--surface);
+            transition: transform var(--transition-fast);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        }
+        .toggle-switch.on::after { transform: translateX(18px); background: #ffffff; }
+
+        .btn-sm {
+            padding: 8px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: rgba(10, 18, 22, 0.6);
+            cursor: pointer;
+            font-size: 11px;
+            letter-spacing: 0.6px;
+            color: var(--text-secondary);
+            transition: all var(--transition-fast);
+            font-family: var(--font-ui);
+            white-space: nowrap;
+        }
+        .btn-sm:hover { background: rgba(20, 36, 43, 0.6); border-color: var(--accent); color: var(--accent); }
+
+        .control-input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            background: rgba(20, 36, 43, 0.28);
+            color: rgba(209, 228, 232, 0.92);
+            outline: none;
+            transition: border-color var(--transition-fast), background var(--transition-fast);
+            font-family: var(--font-ui);
+        }
+        .control-input:focus { border-color: rgba(var(--accent-rgb), 0.9); background: rgba(20, 36, 43, 0.36); }
+
+        .row { display: flex; align-items: center; gap: 10px; }
+        .row > * { flex: 1; }
+
+        .rss-list { display: flex; flex-direction: column; gap: 8px; }
+        .rss-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            border: 1px solid rgba(20, 36, 43, 0.9);
+            border-radius: 14px;
+            background: rgba(10, 18, 22, 0.4);
+        }
+        .rss-item code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 11px;
+            color: rgba(209, 228, 232, 0.8);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 240px;
+        }
+
+        .btn-danger { border-color: rgba(239, 68, 68, 0.35); color: rgba(239, 68, 68, 0.85); }
+        .btn-danger:hover { border-color: rgba(239, 68, 68, 0.7); color: rgba(239, 68, 68, 1); background: rgba(239, 68, 68, 0.08); }
+
+        .overlay-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 150;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+        .overlay-backdrop.visible { opacity: 1; pointer-events: auto; }
+
+        @media (max-width: 768px) {
+            .settings-panel {
+                width: 100%;
+                max-width: 100%;
+                top: auto;
+                bottom: 0;
+                right: 0;
+                left: 0;
+                height: 78dvh;
+                border-radius: 24px 24px 0 0;
+                border-left: none;
+                border-top: 1px solid var(--border);
+                transform: translateY(105%);
+                padding: 20px 16px 40px;
+            }
+            .settings-panel.open { transform: translateY(0); }
+            .canvas-container { width: min(85vw, 85dvh, 400px); height: min(85vw, 85dvh, 400px); }
+            .ui-top-bar { padding: 10px 12px; gap: 4px; }
+            .btn-icon { width: 38px; height: 38px; font-size: 16px; }
+            .bottom-indicators { bottom: calc(var(--bottom-ticker-height) + 14px); }
+            .btn-icon .tooltip { display: none; }
+            .rss-item code { max-width: 200px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+			:root:not(.force-anim) .ticker__track { animation: none !important; transform: none !important; }
+		}
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="ticker ticker--top" id="marketTicker" role="region" aria-label="Market ticker">
+			<div class="session-bar" id="sessionBar" aria-label="Trading sessions timeline" hidden>
+				<div class="session-bar__track">
+					<div class="session-bar__segments" id="sessionBarSegments" aria-hidden="true"></div>
+					<div class="session-bar__markers" id="sessionBarMarkers" aria-hidden="true"></div>
+					<div class="session-bar__now" id="sessionBarNow" aria-hidden="true"></div>
+				</div>
+				<div class="session-bar__legend" aria-hidden="true">
+					<div class="session-bar__legend-left" id="sessionBarLegend"></div>
+					<div class="session-bar__legend-right" id="sessionBarNowText"></div>
+				</div>
+			</div>
+            <div class="ticker__viewport">
+                <div class="ticker__track" id="marketTickerTrack">
+                    <div class="ticker__content" id="marketTickerA"></div>
+                    <div class="ticker__content" id="marketTickerB" aria-hidden="true"></div>
+                </div>
+            </div>
+        </div>
+		
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="clockCanvas" aria-label="Luxury Analog Clock"></canvas>
+        </div>
+
+        <div class="ui-top-bar" id="uiTopBar">
+            <button class="btn-icon" id="btnSound" aria-label="Toggle Sound" title="Mute/Unmute (M)">
+                <span>🔊</span>
+                <span class="tooltip">Sound (M)</span>
+            </button>
+            <button class="btn-icon" id="btnMode" aria-label="Toggle Tick/Sweep" title="Tick/Sweep Mode (T)">
+                <span>◎</span>
+                <span class="tooltip">Mode (T)</span>
+            </button>
+            <button class="btn-icon" id="btnFullscreen" aria-label="Fullscreen" title="Fullscreen (F)">
+                <span>⛶</span>
+                <span class="tooltip">Fullscreen (F)</span>
+            </button>
+            <button class="btn-icon" id="btnSettings" aria-label="Settings" title="Settings">
+                <span>⚙</span>
+                <span class="tooltip">Settings</span>
+            </button>
+        </div>
+
+        <div class="bottom-indicators" id="bottomIndicators">
+            <div class="time-display" id="timeDisplay">12:00:00</div>
+        </div>
+
+        <div class="ticker ticker--bottom" id="rssTicker" role="region" aria-label="RSS ticker">
+            <div class="ticker__viewport">
+                <div class="ticker__track" id="rssTickerTrack">
+                    <div class="ticker__content" id="rssTickerA"></div>
+                    <div class="ticker__content" id="rssTickerB" aria-hidden="true"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="overlay-backdrop" id="overlayBackdrop"></div>
+
+        <div class="settings-panel" id="settingsPanel">
+            <h3>Settings</h3>
+
+            <div class="settings-section">
+                <label>Accent Color</label>
+                <div class="color-picker-row">
+                    <input type="color" id="colorPicker" value="#2dd4bf" />
+                    <button class="btn-sm" id="btnResetColor">Reset Default</button>
+                </div>
+            </div>
+
+            <hr class="divider" />
+
+            <div class="settings-section">
+                <label>Clock Size</label>
+                <div class="slider-group">
+                    <input type="range" id="sizeSlider" min="50" max="150" value="100" step="1" />
+                    <span class="slider-val" id="sizeVal">100%</span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <label>Hand Thickness</label>
+                <div class="slider-group">
+                    <input type="range" id="thicknessSlider" min="60" max="160" value="100" step="1" />
+                    <span class="slider-val" id="thicknessVal">100%</span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <label>Shadow Intensity</label>
+                <div class="slider-group">
+                    <input type="range" id="shadowSlider" min="30" max="200" value="100" step="1" />
+                    <span class="slider-val" id="shadowVal">100%</span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <label>Reflection Intensity</label>
+                <div class="slider-group">
+                    <input type="range" id="reflectionSlider" min="0" max="150" value="100" step="1" />
+                    <span class="slider-val" id="reflectionVal">100%</span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <label>Sound Volume</label>
+                <div class="slider-group">
+                    <input type="range" id="volumeSlider" min="0" max="100" value="50" step="1" />
+                    <span class="slider-val" id="volumeVal">50%</span>
+                </div>
+                <div class="settings-note">
+                    Звук стартует только после клика/тапа/нажатия клавиши (ограничение браузера).
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="toggle-row">
+                    <span>Roman Numerals</span>
+                    <div class="toggle-switch" id="toggleRoman"></div>
+                </div>
+                <div class="toggle-row">
+                    <span>Show Tick Marks</span>
+                    <div class="toggle-switch on" id="toggleTicks"></div>
+                </div>
+                <div class="toggle-row">
+                    <span>Smooth Sweep Mode</span>
+                    <div class="toggle-switch on" id="toggleSweep"></div>
+                </div>
+                <div class="toggle-row">
+                    <span>Sound Enabled</span>
+                    <div class="toggle-switch on" id="toggleSound"></div>
+                </div>
+            </div>
+
+            <hr class="divider" />
+
+            <div class="settings-section">
+                <label>Tickers Size</label>
+                <div class="slider-group">
+                    <input type="range" id="tickerScaleSlider" min="80" max="160" value="100" step="1" />
+                    <span class="slider-val" id="tickerScaleVal">100%</span>
+                </div>
+                <div class="settings-note">
+                    Верхняя и нижняя строки синхронны по размеру.
+                </div>
+                <div class="toggle-row">
+                    <span>Force Animation (игнорировать OS reduced-motion)</span>
+                    <div class="toggle-switch" id="toggleForceAnim"></div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="toggle-row">
+                    <span>Use CORS Proxy (RSS / Optional markets)</span>
+                    <div class="toggle-switch on" id="toggleProxy"></div>
+                </div>
+                <label>Proxy List (auto-fallback по порядку)</label>
+                <div class="row">
+                    <input class="control-input" type="text" id="proxyAddInput" spellcheck="false" placeholder="https://api.allorigins.win/raw?url=" />
+                    <button class="btn-sm" id="btnAddProxy" style="flex:0 0 auto;">Add</button>
+                </div>
+                <div class="rss-list" id="proxySourcesList"></div>
+                <button class="btn-sm" id="btnResetProxies">Reset to Defaults</button>
+                <div class="settings-note">
+                    На GitHub Pages почти любой RSS/маркет-запрос блокируется CORS. Если один proxy лежит (5xx/timeout) — автоматически пробуем следующий из списка. ✓ — текущий рабочий.
+                </div>
+            </div>
+
+            <hr class="divider" />
+
+            <div class="settings-section">
+                <label>Top Market Ticker</label>
+                <div class="toggle-row">
+                    <span>Enabled</span>
+                    <div class="toggle-switch on" id="toggleMarketTicker"></div>
+                </div>
+
+                <label>Add Crypto (name or ticker)</label>
+                <div class="row">
+                    <input class="control-input" type="text" id="coinAddInput" spellcheck="false" placeholder="bitcoin, eth, ton..." />
+                    <button class="btn-sm" id="btnAddCoin" style="flex:0 0 auto;">Add</button>
+                </div>
+                <div class="settings-note" id="coinSearchStatus">Можно добавить несколько монет — все будут бежать в одной строке.</div>
+                <div class="rss-list" id="coinSourcesList"></div>
+
+                <label>VS Currency</label>
+                <select class="control-input" id="vsCurrencySelect">
+                    <option value="usd">USD</option>
+                    <option value="eur">EUR</option>
+                    <option value="gbp">GBP</option>
+                    <option value="jpy">JPY</option>
+                </select>
+
+                <div class="toggle-row">
+                    <span>Bonus: Oil / Gold / Silver / S&amp;P 500 (best-effort)</span>
+                    <div class="toggle-switch" id="toggleBonusAssets"></div>
+                </div>
+
+                <label>Speed (px/s)</label>
+                <div class="slider-group">
+                    <input type="range" id="marketSpeedSlider" min="30" max="260" value="110" step="1" />
+                    <span class="slider-val" id="marketSpeedVal">110</span>
+                </div>
+
+                <label>Refresh Interval</label>
+                <div class="slider-group">
+                    <input type="range" id="marketRefreshSlider" min="60" max="900" value="180" step="10" />
+                    <span class="slider-val" id="marketRefreshVal">180s</span>
+                </div>
+            </div>
+
+            <hr class="divider" />
+
+            <div class="settings-section">
+                <label>Bottom RSS Ticker</label>
+
+                <div class="toggle-row">
+                    <span>Enabled</span>
+                    <div class="toggle-switch on" id="toggleRssTicker"></div>
+                </div>
+
+                <label>Add RSS/Atom URL</label>
+                <div class="row">
+                    <input class="control-input" type="text" id="rssAddInput" spellcheck="false" placeholder="https://example.com/rss.xml" />
+                    <button class="btn-sm" id="btnAddRss" style="flex:0 0 auto;">Add</button>
+                </div>
+
+                <div class="rss-list" id="rssSourcesList"></div>
+
+                <label>Speed (px/s)</label>
+                <div class="slider-group">
+                    <input type="range" id="rssSpeedSlider" min="5" max="320" value="140" step="1" />
+                    <span class="slider-val" id="rssSpeedVal">140</span>
+                </div>
+
+                <label>Refresh Interval</label>
+                <div class="slider-group">
+                    <input type="range" id="rssRefreshSlider" min="300" max="3600" value="900" step="30" />
+                    <span class="slider-val" id="rssRefreshVal">900s</span>
+                </div>
+            </div>
+
+            <button class="btn-sm" id="btnCloseSettings" style="margin-top:16px;align-self:center;padding:10px 28px;font-size:12px;">Close Settings</button>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            "use strict";
+
+            // ─────────────────────────────────────
+            // DOM
+            // ─────────────────────────────────────
+            const canvas = document.getElementById("clockCanvas");
+            const ctx = canvas.getContext("2d", { alpha: true });
+            
+            // Offscreen canvas cache for massive performance boost
+            const offscreenCanvas = document.createElement("canvas");
+            const offscreenCtx = offscreenCanvas.getContext("2d", { alpha: true });
+            let isFaceCached = false;
+
+            const canvasContainer = document.getElementById("canvasContainer");
+            const timeDisplay = document.getElementById("timeDisplay");
+            const settingsPanel = document.getElementById("settingsPanel");
+            const overlayBackdrop = document.getElementById("overlayBackdrop");
+            const body = document.body;
+            const colorPicker = document.getElementById("colorPicker");
+
+            const marketTicker = document.getElementById("marketTicker");
+            const marketTickerTrack = document.getElementById("marketTickerTrack");
+            const marketTickerA = document.getElementById("marketTickerA");
+            const marketTickerB = document.getElementById("marketTickerB");
+
+            const rssTicker = document.getElementById("rssTicker");
+            const rssTickerTrack = document.getElementById("rssTickerTrack");
+            const rssTickerA = document.getElementById("rssTickerA");
+            const rssTickerB = document.getElementById("rssTickerB");
+			
+			const sessionBar = document.getElementById("sessionBar");
+			const sessionBarSegments = document.getElementById("sessionBarSegments");
+			const sessionBarMarkers = document.getElementById("sessionBarMarkers");
+			const sessionBarNow = document.getElementById("sessionBarNow");
+			
+			const sessionBarLegend = document.getElementById("sessionBarLegend");
+            const sessionBarNowText = document.getElementById("sessionBarNowText");
+
+            const btnSound = document.getElementById("btnSound");
+            const btnMode = document.getElementById("btnMode");
+            const btnFullscreen = document.getElementById("btnFullscreen");
+            const btnSettings = document.getElementById("btnSettings");
+
+            const toggleMarketTicker = document.getElementById("toggleMarketTicker");
+            const toggleRssTicker = document.getElementById("toggleRssTicker");
+            const tickerScaleSlider = document.getElementById("tickerScaleSlider");
+            const tickerScaleVal = document.getElementById("tickerScaleVal");
+            const marketSpeedSlider = document.getElementById("marketSpeedSlider");
+            const marketSpeedVal = document.getElementById("marketSpeedVal");
+            const rssSpeedSlider = document.getElementById("rssSpeedSlider");
+            const rssSpeedVal = document.getElementById("rssSpeedVal");
+            const vsCurrencySelect = document.getElementById("vsCurrencySelect");
+            const toggleBonusAssets = document.getElementById("toggleBonusAssets");
+            const marketRefreshSlider = document.getElementById("marketRefreshSlider");
+            const marketRefreshVal = document.getElementById("marketRefreshVal");
+            const rssRefreshSlider = document.getElementById("rssRefreshSlider");
+            const rssRefreshVal = document.getElementById("rssRefreshVal");
+            const toggleProxy = document.getElementById("toggleProxy");
+            const toggleForceAnim = document.getElementById("toggleForceAnim");
+            const proxyAddInput = document.getElementById("proxyAddInput");
+            const btnAddProxy = document.getElementById("btnAddProxy");
+            const btnResetProxies = document.getElementById("btnResetProxies");
+            const proxySourcesList = document.getElementById("proxySourcesList");
+            const coinAddInput = document.getElementById("coinAddInput");
+            const btnAddCoin = document.getElementById("btnAddCoin");
+            const coinSearchStatus = document.getElementById("coinSearchStatus");
+            const coinSourcesList = document.getElementById("coinSourcesList");
+            const rssAddInput = document.getElementById("rssAddInput");
+            const btnAddRss = document.getElementById("btnAddRss");
+            const rssSourcesList = document.getElementById("rssSourcesList");
+
+            // ─────────────────────────────────────
+            // SETTINGS
+            // ─────────────────────────────────────
+            const DEFAULT_COLOR = "#2dd4bf";
+            const STORAGE_KEY = "luxury-clock-modern-settings";
+
+            const defaultSettings = {
+                accentColor: DEFAULT_COLOR,
+                clockSize: 100,
+                handThickness: 100,
+                shadowIntensity: 100,
+                reflectionIntensity: 100,
+                soundVolume: 50,
+                romanNumerals: false,
+                showTicks: true,
+                sweepMode: true,
+                soundEnabled: true,
+                userScale: 1,
+
+                tickerScale: 100,
+                marketTickerEnabled: true,
+                rssTickerEnabled: true,
+                marketSpeed: 110,
+                rssSpeed: 140,
+                marketCoins: [{ id: "bitcoin", symbol: "BTC", label: "Bitcoin" }],
+                marketVsCurrency: "usd",
+                bonusAssetsEnabled: false,
+                marketRefreshSec: 180,
+                rssRefreshSec: 900,
+                rssSources: ["https://news.ycombinator.com/rss"],
+                forceTickerAnimation: true,
+
+                corsProxyEnabled: true,
+                corsProxyList: [
+                    "https://api.allorigins.win/raw?url=",
+                    "https://corsproxy.io/?url=",
+                    "https://api.codetabs.com/v1/proxy?quest=",
+                    "https://thingproxy.freeboard.io/fetch/"
+                ],
+                corsProxyIndex: 0
+            };
+
+            let settings = { ...defaultSettings };
+            let isAppVisible = !document.hidden;
+            let isFrozen = false;
+
+            function clamp(n, min, max) {
+                n = Number(n);
+                if (!Number.isFinite(n)) return min;
+                return Math.max(min, Math.min(max, n));
+            }
+
+            function invalidateCache() {
+                isFaceCached = false;
+            }
+
+            function sanitizeSettings() {
+                settings.accentColor = typeof settings.accentColor === "string" ? settings.accentColor : DEFAULT_COLOR;
+
+                settings.clockSize = clamp(settings.clockSize, 50, 150);
+                settings.handThickness = clamp(settings.handThickness, 60, 160);
+                settings.shadowIntensity = clamp(settings.shadowIntensity, 30, 200);
+                settings.reflectionIntensity = clamp(settings.reflectionIntensity, 0, 150);
+                settings.soundVolume = clamp(settings.soundVolume, 0, 100);
+
+                settings.romanNumerals = !!settings.romanNumerals;
+                settings.showTicks = !!settings.showTicks;
+                settings.sweepMode = !!settings.sweepMode;
+                settings.soundEnabled = !!settings.soundEnabled;
+
+                settings.userScale = clamp(settings.userScale, 0.5, 2.5);
+
+                settings.tickerScale = clamp(settings.tickerScale, 80, 160);
+                settings.marketTickerEnabled = !!settings.marketTickerEnabled;
+                settings.rssTickerEnabled = !!settings.rssTickerEnabled;
+                settings.marketSpeed = clamp(settings.marketSpeed, 30, 260);
+                settings.rssSpeed = clamp(settings.rssSpeed, 5, 320);
+                settings.marketRefreshSec = clamp(settings.marketRefreshSec, 60, 900);
+                settings.rssRefreshSec = clamp(settings.rssRefreshSec, 300, 3600);
+
+                if (!Array.isArray(settings.marketCoins) || !settings.marketCoins.length) {
+                    settings.marketCoins = (typeof settings.marketCryptoId === "string" && settings.marketCryptoId)
+                        ? [{ id: settings.marketCryptoId, symbol: settings.marketCryptoId.toUpperCase().slice(0, 8), label: settings.marketCryptoId }]
+                        : [...defaultSettings.marketCoins];
+                }
+                settings.marketCoins = settings.marketCoins
+                    .filter(c => c && typeof c.id === "string" && c.id.trim().length)
+                    .map(c => ({
+                        id: c.id.trim().toLowerCase(),
+                        symbol: (c.symbol || c.id).toString().toUpperCase().slice(0, 10),
+                        label: (c.label || c.id).toString().slice(0, 40)
+                    }))
+                    .slice(0, 10);
+
+                settings.marketVsCurrency = typeof settings.marketVsCurrency === "string" ? settings.marketVsCurrency : "usd";
+                settings.bonusAssetsEnabled = !!settings.bonusAssetsEnabled;
+                settings.forceTickerAnimation = !!settings.forceTickerAnimation;
+
+                settings.corsProxyEnabled = !!settings.corsProxyEnabled;
+                if (!Array.isArray(settings.corsProxyList) || !settings.corsProxyList.length) {
+                    settings.corsProxyList = [...defaultSettings.corsProxyList];
+                }
+                settings.corsProxyList = settings.corsProxyList
+                    .filter(v => typeof v === "string" && v.trim().length >= 8)
+                    .map(v => v.trim())
+                    .slice(0, 8);
+                settings.corsProxyIndex = Number.isInteger(settings.corsProxyIndex)
+                    ? clamp(settings.corsProxyIndex, 0, Math.max(0, settings.corsProxyList.length - 1))
+                    : 0;
+
+                if (!Array.isArray(settings.rssSources)) settings.rssSources = [...defaultSettings.rssSources];
+                settings.rssSources = settings.rssSources
+                    .filter(v => typeof v === "string" && v.trim().length > 0)
+                    .map(v => v.trim())
+                    .slice(0, 12);
+            }
+
+            function loadSettings() {
+                try {
+                    const stored = localStorage.getItem(STORAGE_KEY);
+                    if (stored) settings = { ...defaultSettings, ...JSON.parse(stored) };
+                } catch (e) {
+                    settings = { ...defaultSettings };
+                }
+                sanitizeSettings();
+            }
+
+            function saveSettings() {
+                sanitizeSettings();
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {}
+            }
+
+            loadSettings();
+
+            // ─────────────────────────────────────
+            // COLOR/THEME
+            // ─────────────────────────────────────
+            function hexToRgb(hex) {
+                const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : { r: 45, g: 212, b: 191 };
+            }
+
+            function lightenColor(hex, amount) {
+                const rgb = hexToRgb(hex);
+                const r = Math.min(255, rgb.r + (255 - rgb.r) * amount);
+                const g = Math.min(255, rgb.g + (255 - rgb.g) * amount);
+                const b = Math.min(255, rgb.b + (255 - rgb.b) * amount);
+                return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+            }
+
+            function applyColorToDOM() {
+                const rgb = hexToRgb(settings.accentColor);
+                document.documentElement.style.setProperty("--accent", settings.accentColor);
+                document.documentElement.style.setProperty("--accent-rgb", `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+                colorPicker.value = settings.accentColor;
+                invalidateCache();
+            }
+
+            function applyTickerVarsToDOM() {
+                const scale = clamp(settings.tickerScale, 80, 160) / 100;
+                const height = Math.round(30 * scale);
+                const fontSize = Math.round(12 * scale);
+                const gap = Math.round(26 * scale);
+
+                document.documentElement.style.setProperty("--ticker-height", `${height}px`);
+                document.documentElement.style.setProperty("--ticker-font-size", `${fontSize}px`);
+                document.documentElement.style.setProperty("--ticker-gap", `${gap}px`);
+
+                const topH = settings.marketTickerEnabled ? height : 0;
+                const bottomH = settings.rssTickerEnabled ? height : 0;
+                document.documentElement.style.setProperty("--top-ticker-height", `${topH}px`);
+                document.documentElement.style.setProperty("--bottom-ticker-height", `${bottomH}px`);
+				
+				const sessionH = settings.marketTickerEnabled ? Math.round(12 * scale) : 0; // базовая высота 12px
+				document.documentElement.style.setProperty("--sessionbar-height", `${sessionH}px`);
+				document.documentElement.style.setProperty("--sessionbar-legend-height", `${Math.round(16 * scale)}px`);
+
+				sessionBar.hidden = !settings.marketTickerEnabled;
+				if (!sessionBar.hidden) renderSessionBarStatic();
+
+                document.documentElement.classList.toggle("force-anim", 
+				!!settings.forceTickerAnimation);
+
+                marketTicker.hidden = !settings.marketTickerEnabled;
+                rssTicker.hidden = !settings.rssTickerEnabled;
+            }
+
+            function getCanvasTheme() {
+                const accent = settings.accentColor;
+                return {
+                    faceGradStart: "#081014",
+                    faceGradEnd: "#030608",
+                    bezelLight: "#14242b",
+                    bezelDark: "#030608",
+                    hourHandColor: accent,
+                    minuteHandColor: accent,
+                    secondHandColor: accent,
+                    centerCapColor: accent,
+                    centerCapDark: "#0a1a1c"
+                };
+            }
+
+            // ─────────────────────────────────────
+            // AUDIO
+            // ─────────────────────────────────────
+            let audioCtx = null;
+            let audioUnlocked = false;
+            let lastSecondTick = -1;
+            let lastSweepSubTick = -1;
+
+            function ensureAudioContextCreated() {
+                if (audioCtx) return true;
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    return true;
+                } catch (e) {
+                    audioCtx = null;
+                    return false;
+                }
+            }
+
+            async function unlockAudioFromGesture() {
+                if (!settings.soundEnabled || !isAppVisible || isFrozen) return;
+                if (audioUnlocked) {
+                    if (audioCtx && audioCtx.state === "suspended") {
+                        try { await audioCtx.resume(); } catch (e) {}
+                    }
+                    return;
+                }
+                if (!ensureAudioContextCreated()) return;
+                try {
+                    if (audioCtx.state === "suspended") await audioCtx.resume();
+                    audioUnlocked = true;
+                } catch (e) {}
+            }
+
+            function suspendAudio() {
+                if (audioCtx && audioCtx.state === "running") {
+                    audioCtx.suspend().catch(() => {});
+                }
+            }
+
+            function playTick() {
+                if (!settings.soundEnabled || !audioCtx || audioCtx.state !== "running" || !isAppVisible || isFrozen) return;
+                const vol = (settings.soundVolume / 100) * 0.35;
+                if (vol < 0.001) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(1100 + Math.random() * 200, now);
+                osc.frequency.exponentialRampToValueAtTime(400 + Math.random() * 150, now + 0.04);
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            }
+
+            function playMechanicalClick(volumeScale = 0.6) {
+                if (!settings.soundEnabled || !audioCtx || audioCtx.state !== "running" || !isAppVisible || isFrozen) return;
+                const vol = (settings.soundVolume / 100) * volumeScale * 0.25;
+                if (vol < 0.001) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(600 + Math.random() * 300, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.025);
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.035);
+            }
+
+            // ─────────────────────────────────────
+            // CANVAS SIZING
+            // ─────────────────────────────────────
+            function resizeCanvasIfNeeded() {
+                const containerWidth = canvasContainer.clientWidth;
+                const containerHeight = canvasContainer.clientHeight;
+                const size = Math.min(containerWidth, containerHeight);
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const internalSize = Math.floor(size * dpr);
+                if (canvas.width !== internalSize || canvas.height !== internalSize) {
+                    canvas.width = internalSize;
+                    canvas.height = internalSize;
+                    invalidateCache();
+                }
+            }
+
+            function getClockMetrics() {
+                const w = canvas.width;
+                const h = canvas.height;
+                const cx = w / 2;
+                const cy = h / 2;
+                const baseRadius = Math.min(w, h) * 0.44;
+                const radius = baseRadius * (settings.clockSize / 100) * settings.userScale;
+                return { cx, cy, radius, w, h };
+            }
+
+            // ─────────────────────────────────────
+            // CLOCK DRAW
+            // ─────────────────────────────────────
+            function drawClockFace(targetCtx, cx, cy, radius, colors) {
+                const shadowAlpha = settings.shadowIntensity / 100;
+                const shadowGrad = targetCtx.createRadialGradient(cx, cy + radius * 0.03, radius * 0.92, cx, cy + radius * 0.06, radius * 1.08);
+                shadowGrad.addColorStop(0, "rgba(0,0,0,0)");
+                shadowGrad.addColorStop(0.7, `rgba(0,0,0,${0.15 * shadowAlpha})`);
+                shadowGrad.addColorStop(1, `rgba(0,0,0,${0.35 * shadowAlpha})`);
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy + radius * 0.02, radius * 1.08, 0, Math.PI * 2);
+                targetCtx.fillStyle = shadowGrad;
+                targetCtx.fill();
+
+                const bezelGrad = targetCtx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+                bezelGrad.addColorStop(0, "#14242b");
+                bezelGrad.addColorStop(0.35, "#030608");
+                bezelGrad.addColorStop(0.65, "#030608");
+                bezelGrad.addColorStop(1, "#14242b");
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, radius * 1.025, 0, Math.PI * 2);
+                targetCtx.fillStyle = bezelGrad;
+                targetCtx.fill();
+
+                const faceGrad = targetCtx.createRadialGradient(cx - radius * 0.15, cy - radius * 0.2, radius * 0.05, cx, cy, radius);
+                faceGrad.addColorStop(0, "#081014");
+                faceGrad.addColorStop(1, "#030608");
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+                targetCtx.fillStyle = faceGrad;
+                targetCtx.fill();
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, radius * 0.96, 0, Math.PI * 2);
+                targetCtx.strokeStyle = `rgba(0,0,0,${0.2 * shadowAlpha})`;
+                targetCtx.lineWidth = radius * 0.008;
+                targetCtx.stroke();
+
+                const innerShadow = targetCtx.createRadialGradient(cx, cy, radius * 0.82, cx, cy, radius * 0.97);
+                innerShadow.addColorStop(0, "rgba(0,0,0,0)");
+                innerShadow.addColorStop(1, `rgba(0,0,0,${0.3 * shadowAlpha})`);
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, radius * 0.97, 0, Math.PI * 2);
+                targetCtx.fillStyle = innerShadow;
+                targetCtx.fill();
+            }
+
+            function drawTicksAndNumerals(targetCtx, cx, cy, radius) {
+                const alpha = settings.shadowIntensity / 100;
+                const rgbAccent = hexToRgb(settings.accentColor);
+
+                for (let i = 0; i < 60; i++) {
+                    const angle = (i * 6 - 90) * Math.PI / 180;
+                    const isHour = i % 5 === 0;
+                    const tickStart = radius * (isHour ? 0.82 : 0.88);
+                    const tickEnd = radius * (isHour ? 0.94 : 0.93);
+                    const tickWidth = isHour ? radius * 0.018 : radius * 0.006;
+
+                    if (settings.showTicks || isHour) {
+                        const x1 = cx + Math.cos(angle) * tickStart;
+                        const y1 = cy + Math.sin(angle) * tickStart;
+                        const x2 = cx + Math.cos(angle) * tickEnd;
+                        const y2 = cy + Math.sin(angle) * tickEnd;
+
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(x1, y1);
+                        targetCtx.lineTo(x2, y2);
+                        targetCtx.strokeStyle = isHour
+                            ? `rgba(${rgbAccent.r}, ${rgbAccent.g}, ${rgbAccent.b}, ${0.9 * alpha})`
+                            : `rgba(42, 74, 82, ${0.6 * alpha})`;
+                        targetCtx.lineWidth = tickWidth;
+                        targetCtx.lineCap = "round";
+                        targetCtx.stroke();
+                    }
+                }
+
+                const numeralRadius = radius * 0.72;
+                const romanMap = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+                const fontBase = radius * 0.11;
+
+                targetCtx.textAlign = "center";
+                targetCtx.textBaseline = "middle";
+
+                for (let i = 1; i <= 12; i++) {
+                    const angle = (i * 30 - 90) * Math.PI / 180;
+                    const nx = cx + Math.cos(angle) * numeralRadius;
+                    const ny = cy + Math.sin(angle) * numeralRadius;
+                    const label = settings.romanNumerals ? romanMap[i - 1] : i.toString();
+
+                    targetCtx.fillStyle = `rgba(${rgbAccent.r}, ${rgbAccent.g}, ${rgbAccent.b}, ${0.85 * alpha})`;
+                    const fontSize = settings.romanNumerals ? fontBase * 0.80 : fontBase;
+                    targetCtx.font = `500 ${fontSize}px "Inter", "Segoe UI", "Helvetica Neue", sans-serif`;
+                    targetCtx.fillText(label, nx, ny);
+                }
+            }
+
+            function drawHand(targetCtx, cx, cy, angle, length, baseWidth, tipWidth, color, shadowColor, radius, isSecondHand = false) {
+                const w = baseWidth * (settings.handThickness / 100);
+                const tw = tipWidth * (settings.handThickness / 100);
+                const tipX = cx + Math.cos(angle) * length;
+                const tipY = cy + Math.sin(angle) * length;
+                const backLength = length * (isSecondHand ? 0.22 : 0.14);
+
+                const perpAngle = angle + Math.PI / 2;
+                const baseOffsetX = Math.cos(perpAngle) * w;
+                const baseOffsetY = Math.sin(perpAngle) * w;
+                const tipOffsetX = Math.cos(perpAngle) * tw;
+                const tipOffsetY = Math.sin(perpAngle) * tw;
+                const backOffsetX = Math.cos(perpAngle) * w * 0.6;
+                const backOffsetY = Math.sin(perpAngle) * w * 0.6;
+
+                if (settings.shadowIntensity > 10) {
+                    const shadowDist = radius * 0.015;
+                    const sx = cx + Math.cos(angle + 0.04) * shadowDist;
+                    const sy = cy + Math.sin(angle + 0.04) * shadowDist;
+
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(sx - backOffsetX, sy - backOffsetY);
+                    targetCtx.lineTo(sx - baseOffsetX, sy - baseOffsetY);
+                    targetCtx.lineTo(tipX + tipOffsetX, tipY + tipOffsetY);
+                    targetCtx.lineTo(tipX - tipOffsetX, tipY - tipOffsetY);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = shadowColor;
+                    targetCtx.fill();
+                }
+
+                const grad = targetCtx.createLinearGradient(
+                    cx - Math.cos(angle) * length * 0.3,
+                    cy - Math.sin(angle) * length * 0.3,
+                    tipX, tipY
+                );
+                grad.addColorStop(0, color);
+                grad.addColorStop(1, isSecondHand ? lightenColor(color, 0.2) : lightenColor(color, 0.08));
+
+                const backX = cx - Math.cos(angle) * backLength;
+                const backY = cy - Math.sin(angle) * backLength;
+
+                targetCtx.beginPath();
+                targetCtx.moveTo(backX - backOffsetX, backY - backOffsetY);
+                targetCtx.lineTo(cx - baseOffsetX, cy - baseOffsetY);
+                targetCtx.lineTo(tipX - tipOffsetX, tipY - tipOffsetY);
+                targetCtx.lineTo(tipX + tipOffsetX, tipY + tipOffsetY);
+                targetCtx.lineTo(cx + baseOffsetX, cy + baseOffsetY);
+                targetCtx.lineTo(backX + backOffsetX, backY + backOffsetY);
+                targetCtx.closePath();
+                targetCtx.fillStyle = grad;
+                targetCtx.fill();
+            }
+
+            function drawCenterCap(targetCtx, cx, cy, radius, colors) {
+                const capR = radius * 0.06;
+                const capGrad = targetCtx.createRadialGradient(cx - capR * 0.3, cy - capR * 0.35, capR * 0.05, cx, cy, capR);
+                capGrad.addColorStop(0, colors.centerCapColor);
+                capGrad.addColorStop(0.6, colors.centerCapDark);
+                capGrad.addColorStop(1, "#020405");
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, capR, 0, Math.PI * 2);
+                targetCtx.fillStyle = capGrad;
+                targetCtx.fill();
+            }
+
+            function drawGlassReflection(targetCtx, cx, cy, radius) {
+                const intensity = settings.reflectionIntensity / 100;
+                if (intensity < 0.01) return;
+
+                const grad = targetCtx.createRadialGradient(
+                    cx - radius * 0.3, cy - radius * 0.35, radius * 0.08,
+                    cx - radius * 0.05, cy - radius * 0.05, radius * 1.3
+                );
+                grad.addColorStop(0, `rgba(255,255,255,${0.15 * intensity})`);
+                grad.addColorStop(0.25, `rgba(255,255,255,${0.08 * intensity})`);
+                grad.addColorStop(0.55, "rgba(255,255,255,0)");
+
+                targetCtx.beginPath();
+                targetCtx.arc(cx, cy, radius * 0.99, 0, Math.PI * 2);
+                targetCtx.fillStyle = grad;
+                targetCtx.fill();
+            }
+
+            function formatTime(date) {
+                const h = date.getHours().toString().padStart(2, "0");
+                const m = date.getMinutes().toString().padStart(2, "0");
+                const s = date.getSeconds().toString().padStart(2, "0");
+                return `${h}:${m}:${s}`;
+            }
+
+            let isCalibrating = true;
+            let calibrationStartTime = performance.now();
+            const calibrationDuration = 1600;
+            const calibrationStartOffset = Math.random() * Math.PI * 2;
+
+            function renderClock() {
+                const { cx, cy, radius: r, w, h } = getClockMetrics();
+                
+                const colors = getCanvasTheme();
+                const date = new Date();
+                const hours = date.getHours();
+                const minutes = date.getMinutes();
+                const seconds = date.getSeconds();
+                const millis = date.getMilliseconds();
+
+                let secondAngle, minuteAngle, hourAngle;
+
+                if (settings.sweepMode) {
+                    secondAngle = ((seconds + millis / 1000) / 60) * Math.PI * 2 - Math.PI / 2;
+                    minuteAngle = ((minutes + seconds / 60 + millis / 60000) / 60) * Math.PI * 2 - Math.PI / 2;
+                    hourAngle = (((hours % 12) + minutes / 60 + seconds / 3600) / 12) * Math.PI * 2 - Math.PI / 2;
+                } else {
+                    secondAngle = (seconds / 60) * Math.PI * 2 - Math.PI / 2;
+                    minuteAngle = ((minutes + seconds / 60) / 60) * Math.PI * 2 - Math.PI / 2;
+                    hourAngle = (((hours % 12) + minutes / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+                }
+
+                if (isCalibrating) {
+                    const elapsed = performance.now() - calibrationStartTime;
+                    const progress = Math.min(elapsed / calibrationDuration, 1);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+
+                    const targetSecondAngle = secondAngle;
+                    const extraRotations = 1.5 * (1 - eased);
+                    secondAngle = targetSecondAngle - extraRotations * Math.PI * 2 + calibrationStartOffset * (1 - eased);
+
+                    if (progress >= 1) {
+                        isCalibrating = false;
+                        canvasContainer.classList.remove("calibrating");
+                    }
+                }
+
+                // Caching strategy for performance
+                if (!isFaceCached || offscreenCanvas.width !== w || offscreenCanvas.height !== h) {
+                    offscreenCanvas.width = w;
+                    offscreenCanvas.height = h;
+                    offscreenCtx.clearRect(0, 0, w, h);
+                    drawClockFace(offscreenCtx, cx, cy, r, colors);
+                    drawTicksAndNumerals(offscreenCtx, cx, cy, r);
+                    isFaceCached = true;
+                }
+
+                // Render main canvas
+                ctx.clearRect(0, 0, w, h);
+                ctx.drawImage(offscreenCanvas, 0, 0); // Paint cached static bg
+
+                const shadowCol = `rgba(0,0,0,${0.6 * (settings.shadowIntensity / 100)})`;
+
+                drawHand(ctx, cx, cy, hourAngle, r * 0.54, r * 0.044, r * 0.018, colors.hourHandColor, shadowCol, r, false);
+                drawHand(ctx, cx, cy, minuteAngle, r * 0.76, r * 0.034, r * 0.013, colors.minuteHandColor, shadowCol, r, false);
+                drawHand(ctx, cx, cy, secondAngle, r * 0.82, r * 0.012, r * 0.005, colors.secondHandColor, shadowCol, r, true);
+
+                drawCenterCap(ctx, cx, cy, r, colors);
+                drawGlassReflection(ctx, cx, cy, r);
+
+                const timeStr = formatTime(date);
+                if (timeDisplay.textContent !== timeStr) timeDisplay.textContent = timeStr;
+            }
+
+            // ─────────────────────────────────────
+            // MAIN LOOP
+            // ─────────────────────────────────────
+            let animationFrameId = 0;
+            let renderLoopRunning = false;
+
+            function animationLoop() {
+                if (!isAppVisible || isFrozen) { renderLoopRunning = false; return; }
+
+                const date = new Date();
+                const currentSecond = date.getSeconds(); 
+				updateSessionBarNow(date);
+
+                if (!settings.sweepMode && settings.soundEnabled && !isCalibrating) {
+                    if (currentSecond !== lastSecondTick) {
+                        lastSecondTick = currentSecond;
+                        playTick();
+                    }
+                }
+
+                if (settings.sweepMode && settings.soundEnabled && !isCalibrating) {
+                    const subSecond = date.getMilliseconds() / 1000;
+                    const sweepTickPosition = Math.floor(subSecond * 4);
+                    if (sweepTickPosition !== lastSweepSubTick) {
+                        lastSweepSubTick = sweepTickPosition;
+                        playMechanicalClick(0.25);
+                    }
+                }
+
+                renderClock();
+                animationFrameId = requestAnimationFrame(animationLoop);
+            }
+
+            function startRenderLoop() {
+                if (renderLoopRunning) return;
+                if (!isAppVisible || isFrozen) return;
+                renderLoopRunning = true;
+                animationFrameId = requestAnimationFrame(animationLoop);
+            }
+
+            function stopRenderLoop() {
+                renderLoopRunning = false;
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                animationFrameId = 0;
+            }
+
+            // ─────────────────────────────────────
+            // NETWORK HELPERS
+            // ─────────────────────────────────────
+            function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+            async function fetchWithTimeout(url, opts = {}) {
+                const timeoutMs = clamp(opts.timeoutMs || 9000, 2000, 20000);
+                const controller = new AbortController();
+                const id = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    return await fetch(url, {
+                        method: "GET",
+                        cache: "no-store",
+                        credentials: "omit",
+                        referrerPolicy: "no-referrer",
+                        redirect: "follow",
+                        signal: controller.signal
+                    });
+                } finally {
+                    clearTimeout(id);
+                }
+            }
+
+            function buildProxyUrlAt(originalUrl, idx) {
+                const list = settings.corsProxyList || [];
+                const base = (list[idx] || "").trim();
+                if (!base) return "";
+                return base + encodeURIComponent(originalUrl);
+            }
+
+            async function fetchViaProxyRotation(originalUrl, timeoutMs) {
+                const list = settings.corsProxyList || [];
+                if (!list.length) throw new Error("No proxies configured");
+                const startIdx = clamp(settings.corsProxyIndex, 0, list.length - 1);
+                let lastErr = null;
+
+                for (let step = 0; step < list.length; step++) {
+                    const idx = (startIdx + step) % list.length;
+                    const proxyUrl = buildProxyUrlAt(originalUrl, idx);
+                    if (!proxyUrl) continue;
+                    try {
+                        const res = await fetchWithTimeout(proxyUrl, { timeoutMs: Math.max(12000, timeoutMs) });
+                        if (!res.ok) throw new Error("Proxy HTTP " + res.status);
+                        const text = await res.text();
+                        if (idx !== settings.corsProxyIndex) {
+                            settings.corsProxyIndex = idx;
+                            saveSettings();
+                        }
+                        return text;
+                    } catch (e) {
+                        lastErr = e;
+                    }
+                }
+                throw lastErr || new Error("All proxies failed");
+            }
+
+            async function fetchTextSmart(url, { timeoutMs = 9000, preferProxy = false } = {}) {
+                if (!isAppVisible || isFrozen) throw new Error("Hidden/Frozen: network disabled");
+                if (!navigator.onLine) throw new Error("Offline");
+
+                if (preferProxy && settings.corsProxyEnabled) {
+                    return await fetchViaProxyRotation(url, timeoutMs);
+                }
+
+                try {
+                    const resD = await fetchWithTimeout(url, { timeoutMs });
+                    if (!resD.ok) throw new Error("HTTP " + resD.status);
+                    return await resD.text();
+                } catch (e) {
+                    if (!settings.corsProxyEnabled) throw e;
+                    return await fetchViaProxyRotation(url, timeoutMs);
+                }
+            }
+
+            async function fetchJsonSmart(url, { timeoutMs = 9000 } = {}) {
+                const txt = await fetchTextSmart(url, { timeoutMs });
+                // Some proxies wrap json in { contents: "..." }
+                try {
+                    const proxyData = JSON.parse(txt);
+                    if (proxyData && proxyData.contents) {
+                        try { return JSON.parse(proxyData.contents); } catch (e) {}
+                    }
+                    return proxyData;
+                } catch (e) {
+                    throw new Error("Invalid JSON");
+                }
+            }
+
+            // ─────────────────────────────────────
+            // TICKER ENGINE (ROBUST)
+            // ─────────────────────────────────────
+            function escapeHTML(str) {
+                return String(str)
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#039;");
+            }
+
+            function restartCssAnimation(el) {
+                if (typeof el.getAnimations === "function") {
+                    const anims = el.getAnimations();
+                    for (const a of anims) {
+                        try { a.cancel(); a.play(); } catch (_) {}
+                    }
+                    return;
+                }
+                el.style.animation = "none";
+                void el.offsetHeight;
+                el.style.animation = "";
+            }
+
+            function setTickerContent(tickerEl, trackEl, aEl, bEl, html, speedPxPerSec) {
+                const safeHtml = (typeof html === "string" && html.trim().length)
+                    ? html
+                    : `<span class="ticker__item"><span class="ticker__sym">INFO</span><span class="ticker__price">—</span><span class="ticker__chg flat">(—)</span></span>`;
+
+                tickerEl.dataset.html = safeHtml;
+
+                aEl.innerHTML = safeHtml;
+                bEl.innerHTML = safeHtml;
+
+                requestAnimationFrame(() => {
+                    const reduceMotion = !settings.forceTickerAnimation && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                    if (reduceMotion) {
+                        tickerEl.classList.add("paused");
+                        trackEl.style.removeProperty("--ticker-distance");
+                        trackEl.style.removeProperty("--ticker-duration");
+                        return;
+                    }
+                    if (tickerEl.hidden) return;
+
+                    // FIX DOM EXPLOSION: Ensure baseWidth is never too small when hidden
+                    const baseWidthRaw = aEl.getBoundingClientRect().width;
+                    const baseWidth = Number.isFinite(baseWidthRaw) && baseWidthRaw > 20 ? baseWidthRaw : 600;
+                    const viewportWidth = tickerEl.clientWidth || window.innerWidth || 1200;
+                    
+                    const distance = baseWidth;
+                    const speed = clamp(speedPxPerSec, 5, 600);
+                    const durationSec = clamp(distance / speed, 8, 1200);
+
+                    trackEl.style.setProperty("--ticker-distance", distance + "px");
+                    trackEl.style.setProperty("--ticker-duration", durationSec.toFixed(2) + "s");
+
+                    tickerEl.classList.remove("paused");
+                    restartCssAnimation(trackEl);
+                });
+            }
+
+            function recomputeTickerAnimations() {
+                if (settings.marketTickerEnabled && !marketTicker.hidden) {
+                    setTickerContent(marketTicker, marketTickerTrack, marketTickerA, marketTickerB, marketTicker.dataset.html || marketTickerA.innerHTML || "", settings.marketSpeed);
+                }
+                if (settings.rssTickerEnabled && !rssTicker.hidden) {
+                    setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, rssTicker.dataset.html || rssTickerA.innerHTML || "", settings.rssSpeed);
+                }
+            }
+
+            function pauseTickers() {
+                marketTicker.classList.add("paused");
+                rssTicker.classList.add("paused");
+            }
+
+            function resumeTickersIfAllowed() {
+                const reduceMotion = !settings.forceTickerAnimation && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                if (!isAppVisible || isFrozen || reduceMotion) return;
+                marketTicker.classList.remove("paused");
+                rssTicker.classList.remove("paused");
+                restartCssAnimation(marketTickerTrack);
+                restartCssAnimation(rssTickerTrack);
+            }
+
+            function computeRepeatCount(baseWidth, viewportWidth) {
+                const safeBase = Number.isFinite(baseWidth) && baseWidth > 20 ? baseWidth : 600;
+                const target = viewportWidth * 2;
+                return clamp(Math.ceil(target / safeBase), 2, 20);
+            }
+
+			// ─────────────────────────────────────
+			// SESSION BAR (APAC / EU / US)
+			// Times below are common "market session" ranges in UTC (approx).
+			// APAC = Sydney+Tokyo merged; EU = London; US = New York.
+			// ─────────────────────────────────────
+			const sessionSpecs = [
+				{ id: "apac", label: "APAC", startUtc: 21, endUtc: 9,  color: "rgba(56, 189, 248, 0.22)" }, // 21:00–09:00 UTC
+				{ id: "eu",   label: "EU",   startUtc: 7,  endUtc: 16, color: "rgba(168, 85, 247, 0.18)" }, // 07:00–16:00 UTC
+				{ id: "us",   label: "US",   startUtc: 12, endUtc: 21, color: "rgba(34, 197, 94, 0.16)" }   // 12:00–21:00 UTC
+			];
+
+			function hourToPct(h) {
+				return (h / 24) * 100;
+			}
+
+			function utcToLocalHour(utcHour, offsetHours) {
+				return (utcHour + offsetHours + 24) % 24;
+			}
+
+			function renderSessionBarStatic() {
+				if (!sessionBar || sessionBar.hidden) return;
+
+				// local offset in hours (e.g., UTC+3 => +3)
+				const now = new Date();
+				const offsetHours = -now.getTimezoneOffset() / 60;
+
+				sessionBarSegments.innerHTML = "";
+				sessionBarMarkers.innerHTML = "";
+				
+				if (sessionBarLegend) sessionBarLegend.innerHTML = "";
+
+				function addSeg(startLocal, endLocal, color) {
+					const seg = document.createElement("div");
+					seg.className = "session-bar__seg";
+					seg.style.background = color;
+					seg.style.left = hourToPct(startLocal) + "%";
+					seg.style.width = hourToPct(endLocal - startLocal) + "%";
+					sessionBarSegments.appendChild(seg);
+				}
+
+				function addMarker(localHour, cls, title) {
+					const m = document.createElement("div");
+					m.className = "session-bar__marker " + cls;
+					m.style.left = hourToPct(localHour) + "%";
+					m.title = title;
+					// чтобы tooltip работал, разрешим pointer-events только маркерам
+					m.style.pointerEvents = "auto";
+					sessionBarMarkers.appendChild(m);
+				}
+				
+				function fmtHM(hoursFloat) {
+					const h = Math.floor(hoursFloat) % 24;
+					const m = Math.round((hoursFloat - Math.floor(hoursFloat)) * 60);
+					const mm = (m === 60 ? 0 : m); // защита от округления
+					const hh = (m === 60 ? (h + 1) % 24 : h);
+					return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+				}
+
+				for (const s of sessionSpecs) {
+					const start = utcToLocalHour(s.startUtc, offsetHours);
+					const end = utcToLocalHour(s.endUtc, offsetHours);
+
+					// сегменты (если сессия "переворачивается" через полночь — режем на две части)
+					if (start < end) {
+						addSeg(start, end, s.color);
+					} else {
+						addSeg(start, 24, s.color);
+						addSeg(0, end, s.color);
+					}
+
+					// маркеры открытия/закрытия
+					addMarker(start, "open", `${s.label} open`);
+					addMarker(end, "close", `${s.label} close`);
+					
+					if (sessionBarLegend) {
+						const tag = document.createElement("span");
+						tag.className = "session-bar__tag";
+
+						const dot = document.createElement("span");
+						dot.className = "session-bar__dot";
+						dot.style.setProperty("--c", s.color);
+
+						const text = document.createElement("span");
+						text.textContent = `${s.label} ${fmtHM(start)}–${fmtHM(end)}`;
+
+						tag.appendChild(dot);
+						tag.appendChild(text);
+						sessionBarLegend.appendChild(tag);
+					}
+				}
+			}
+
+			function updateSessionBarNow(date = new Date()) {
+				if (!sessionBarNow || sessionBar.hidden) return;
+				const h = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+				sessionBarNow.style.left = hourToPct(h) + "%";
+				if (sessionBarNowText) {
+					const hh = String(date.getHours()).padStart(2, "0");
+					const mm = String(date.getMinutes()).padStart(2, "0");
+					sessionBarNowText.textContent = `Now: ${hh}:${mm}`;
+				}
+			}
+
+            // ─────────────────────────────────────
+            // MARKET TICKER (CoinGecko + Yahoo Finance)
+            // ─────────────────────────────────────
+            const marketState = { timer: 0, backoffMs: 0, lastItems: [], inFlight: false };
+
+            const bonusSymbols = [
+				// Энергоносители
+				{ symbol: "BZ=F", label: "Brent Crude" },
+				{ symbol: "CL=F", label: "WTI Crude" },
+
+				// Драгоценные и промышленные металлы
+				{ symbol: "GC=F", label: "Gold" },
+				{ symbol: "SI=F", label: "Silver" },
+				{ symbol: "PL=F", label: "Platinum" },
+				{ symbol: "PA=F", label: "Palladium" },
+				{ symbol: "HG=F", label: "Copper" },
+
+				// Главные фондовые индексы (Спот / Текущие значения)
+				{ symbol: "^GSPC", label: "S&P 500" },
+				{ symbol: "^DJI", label: "Dow Jones" },
+				{ symbol: "^RUT", label: "Russell 2000 (Small Cap)" }
+			];
+
+            function formatCurrency(value, currency) {
+                if (!Number.isFinite(value)) return "N/A";
+                try {
+                    return new Intl.NumberFormat(undefined, {
+                        style: "currency",
+                        currency: (currency || "USD").toUpperCase(),
+                        maximumFractionDigits: value >= 1000 ? 0 : (value >= 10 ? 2 : 4)
+                    }).format(value);
+                } catch {
+                    return value.toFixed(value >= 10 ? 2 : 4);
+                }
+            }
+
+            function formatPct(pct) {
+                if (!Number.isFinite(pct)) return "—";
+                const sign = pct > 0 ? "+" : "";
+                return sign + pct.toFixed(2) + "%";
+            }
+
+            function buildMarketHTML(items, repeatCount) {
+                const parts = [];
+                const rep = clamp(repeatCount, 1, 20);
+                for (let r = 0; r < rep; r++) {
+                    for (const it of items) {
+                        const sym = escapeHTML(it.symbol || it.label || "");
+                        const price = escapeHTML(it.priceText || "N/A");
+                        const changeText = escapeHTML(it.changeText || "—");
+                        const meta = it.meta ? ` <span class="ticker__meta">${escapeHTML(it.meta)}</span>` : "";
+                        const chgClass = it.changeClass || "flat";
+						const sep = chgClass === "up" ? "▲" : (chgClass === "down" ? "▼" : "•");
+						parts.push(
+							`<span class="ticker__item">` +
+								`<span class="ticker__sym">${sym}</span>` +
+								`<span class="ticker__price ${chgClass}">${price}</span>` +
+								`<span class="ticker__chg ${chgClass}">(${changeText})</span>` +
+								meta +
+								`<span class="ticker__sep ${chgClass}">${sep}</span>` +
+							`</span>`
+						);
+                    }
+                }
+                return parts.join("");
+            }
+
+            async function fetchCoinGeckoMulti(coinIds, vsCurrency) {
+                if (!coinIds.length) return [];
+                const ids = encodeURIComponent(coinIds.join(","));
+                const vs = encodeURIComponent(vsCurrency);
+                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs}&ids=${ids}&price_change_percentage=24h`;
+                const data = await fetchJsonSmart(url, { timeoutMs: 9000 });
+                if (!Array.isArray(data)) throw new Error("CoinGecko: empty response");
+                return data.map(row => ({
+                    id: row.id,
+                    label: row.name || row.id,
+                    symbol: row.symbol ? row.symbol.toUpperCase() : String(row.id).toUpperCase(),
+                    price: Number(row.current_price),
+                    changePct: Number(row.price_change_percentage_24h),
+                    currency: vsCurrency
+                }));
+            }
+
+            async function searchCoinGecko(query) {
+                const q = encodeURIComponent(query.trim());
+                if (!q) throw new Error("Empty query");
+                const url = `https://api.coingecko.com/api/v3/search?query=${q}`;
+                const data = await fetchJsonSmart(url, { timeoutMs: 9000 });
+                const coins = Array.isArray(data?.coins) ? data.coins : [];
+                if (!coins.length) throw new Error("Coin not found: " + query);
+                return coins[0];
+            }
+
+            async function fetchYahooDailyChange(symbol) {
+                const s = encodeURIComponent(symbol);
+                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
+                const txt = await fetchTextSmart(url, { timeoutMs: 12000, preferProxy: true });
+
+                let dataText = txt;
+                try {
+                    const proxyData = JSON.parse(txt);
+                    if (proxyData && proxyData.contents) dataText = proxyData.contents;
+                } catch (e) {}
+
+                const json = JSON.parse(dataText);
+                const result = json.chart.result[0];
+                const closes = result.indicators.quote[0].close.filter(c => c !== null);
+                if (closes.length < 2) throw new Error("Yahoo: not enough data");
+
+                const lastClose = closes[closes.length - 1];
+                const prevClose = closes[closes.length - 2];
+                const pct = ((lastClose - prevClose) / prevClose) * 100;
+                return { price: lastClose, changePct: pct };
+            }
+
+            async function refreshMarketTicker() {
+                if (!settings.marketTickerEnabled || !isAppVisible || isFrozen || marketState.inFlight) return;
+                marketState.inFlight = true;
+
+                try {
+                    const items = [];
+                    const coinIds = (settings.marketCoins || []).map(c => c.id).filter(Boolean);
+
+                    if (coinIds.length) {
+                        const rows = await fetchCoinGeckoMulti(coinIds, settings.marketVsCurrency);
+                        const byId = new Map(rows.map(r => [r.id, r]));
+                        for (const coin of settings.marketCoins) {
+                            const r = byId.get(coin.id);
+                            if (!r) {
+                                items.push({ label: coin.label, symbol: coin.symbol, priceText: "N/A", changeText: "—", changeClass: "flat" });
+                                continue;
+                            }
+                            const changeClass = Number.isFinite(r.changePct) ? (r.changePct > 0 ? "up" : (r.changePct < 0 ? "down" : "flat")) : "flat";
+                            items.push({
+                                label: r.label,
+                                symbol: r.symbol,
+                                priceText: formatCurrency(r.price, settings.marketVsCurrency),
+                                changeText: formatPct(r.changePct),
+                                changeClass
+                            });
+                        }
+                    }
+
+                    if (settings.bonusAssetsEnabled) {
+                        for (const b of bonusSymbols) {
+                            try {
+                                const v = await fetchYahooDailyChange(b.symbol);
+                                const cls = v.changePct > 0 ? "up" : (v.changePct < 0 ? "down" : "flat");
+                                items.push({
+                                    label: b.label,
+                                    symbol: b.label,
+                                    priceText: Number.isFinite(v.price)
+                                        ? new Intl.NumberFormat(undefined, { maximumFractionDigits: v.price >= 1000 ? 0 : 2 }).format(v.price)
+                                        : "N/A",
+                                    changeText: formatPct(v.changePct),
+                                    changeClass: cls
+                                });
+                            } catch {
+                                items.push({ label: b.label, symbol: b.label, priceText: "N/A", changeText: "—", changeClass: "flat" });
+                            }
+                            await sleep(150); // Be gentle with proxy
+                        }
+                    }
+
+                    if (!items.length) throw new Error("No coins configured");
+
+                    const baseHtml = buildMarketHTML(items, 1);
+                    marketTickerA.innerHTML = baseHtml;
+                    const baseWidth = marketTickerA.scrollWidth || 100;
+                    const viewportWidth = marketTicker.clientWidth || window.innerWidth || 1200;
+                    const repeatCount = computeRepeatCount(baseWidth, viewportWidth);
+
+                    const html = buildMarketHTML(items, repeatCount);
+                    setTickerContent(marketTicker, marketTickerTrack, marketTickerA, marketTickerB, html, settings.marketSpeed);
+
+                    marketState.backoffMs = 0;
+                    marketState.lastItems = items;
+                } catch (e) {
+                    marketState.backoffMs = marketState.backoffMs ? Math.min(marketState.backoffMs * 2, 10 * 60 * 1000) : 60 * 1000;
+                    if (!marketState.lastItems.length) {
+                        const html = `<span class="ticker__item"><span class="ticker__sym">MARKET</span><span class="ticker__price">No data</span><span class="ticker__chg flat">(backoff)</span></span>`;
+                        setTickerContent(marketTicker, marketTickerTrack, marketTickerA, marketTickerB, html, settings.marketSpeed);
+                    } else {
+                        recomputeTickerAnimations();
+                    }
+                } finally {
+                    marketState.inFlight = false;
+                }
+            }
+
+            function scheduleMarketLoop(immediate = false) {
+                clearTimeout(marketState.timer);
+                if (!settings.marketTickerEnabled || !isAppVisible || isFrozen) return;
+
+                const saveData = navigator.connection && navigator.connection.saveData;
+                const baseMs = clamp(settings.marketRefreshSec, 60, 1800) * 1000;
+                const intervalMs = saveData ? Math.max(baseMs, 300000) : baseMs;
+
+                const delay = immediate ? 50 : (marketState.backoffMs || intervalMs);
+                marketState.timer = setTimeout(async () => {
+                    await refreshMarketTicker();
+                    scheduleMarketLoop(false);
+                }, delay + Math.floor(Math.random() * 350));
+            }
+
+            function stopMarketLoop() {
+                clearTimeout(marketState.timer);
+                marketState.timer = 0;
+                marketState.inFlight = false;
+            }
+
+            // ─────────────────────────────────────
+            // RSS TICKER (proxy-first to avoid CORS)
+            // ─────────────────────────────────────
+            const rssState = { timer: 0, backoffMs: 0, inFlight: false, lastTitles: [] };
+
+            function normalizeUrl(u) {
+                const url = new URL(u);
+                if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http/https allowed");
+                return url.toString();
+            }
+
+            function parseFeed(xmlText) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(xmlText, "text/xml");
+                if (doc.querySelector("parsererror")) throw new Error("XML parse error");
+
+                const items = Array.from(doc.querySelectorAll("rss channel item, channel item"));
+                if (items.length) {
+                    return items.map(node => {
+                        const title = (node.querySelector("title")?.textContent || "").trim();
+                        const link = (node.querySelector("link")?.textContent || "").trim();
+                        const pubDate = (node.querySelector("pubDate")?.textContent || "").trim();
+                        const ts = pubDate ? Date.parse(pubDate) : NaN;
+                        return { title, link, ts: Number.isFinite(ts) ? ts : 0 };
+                    }).filter(x => x.title);
+                }
+
+                const entries = Array.from(doc.querySelectorAll("feed entry"));
+                if (entries.length) {
+                    return entries.map(node => {
+                        const title = (node.querySelector("title")?.textContent || "").trim();
+                        let link = "";
+                        const linkEl = node.querySelector('link[rel="alternate"]') || node.querySelector("link");
+                        if (linkEl) link = (linkEl.getAttribute("href") || "").trim();
+                        const updated = (node.querySelector("updated")?.textContent || node.querySelector("published")?.textContent || "").trim();
+                        const ts = updated ? Date.parse(updated) : NaN;
+                        return { title, link, ts: Number.isFinite(ts) ? ts : 0 };
+                    }).filter(x => x.title);
+                }
+
+                return [];
+            }
+
+            function buildRssHTML(items, repeatCount) {
+                const parts = [];
+                const rep = clamp(repeatCount, 1, 20);
+                for (let r = 0; r < rep; r++) {
+                    for (const it of items) {
+                        const title = escapeHTML(it.title || "");
+                        const link = (it.link && String(it.link).startsWith("http")) ? String(it.link) : "";
+                        const content = link
+                            ? `<a href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${title}</a>`
+                            : `<span>${title}</span>`;
+                        parts.push(`<span class="ticker__item"><span class="ticker__sym">★</span><span class="ticker__price">${content}</span></span>`);
+                    }
+                }
+                return parts.join("");
+            }
+
+            async function refreshRssTicker() {
+                if (!settings.rssTickerEnabled || !isAppVisible || isFrozen || rssState.inFlight) return;
+                rssState.inFlight = true;
+
+                try {
+                    const sources = (settings.rssSources || []).slice(0, 12);
+                    if (!sources.length) {
+                        const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No sources</span><span class="ticker__chg flat">(add in settings)</span></span>`;
+                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+                        rssState.lastTitles = [];
+                        rssState.backoffMs = 0;
+                        return;
+                    }
+
+                    const all = [];
+                    for (const src of sources) {
+                        if (!isAppVisible || isFrozen) break;
+                        try {
+                            const xml = await fetchTextSmart(src, { timeoutMs: 12000, preferProxy: true });
+                            const parsed = parseFeed(xml).slice(0, 12);
+                            for (const it of parsed) all.push(it);
+                        } catch {
+                            // skip broken feed silently
+                        }
+                        await sleep(140);
+                    }
+
+                    const seen = new Set();
+                    const uniq = [];
+                    for (const it of all) {
+                        const key = (it.title || "") + "||" + (it.link || "");
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        uniq.push(it);
+                    }
+
+                    uniq.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                    const finalItems = uniq.slice(0, 50);
+
+                    if (!finalItems.length) {
+                        const repeated = buildRssHTML([{ title: "No items (check proxy / sources)", link: "" }], 10);
+                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, repeated, settings.rssSpeed);
+                        rssState.lastTitles = [];
+                        rssState.backoffMs = 0;
+                        return;
+                    }
+
+                    const baseHtml = buildRssHTML(finalItems, 1);
+                    rssTickerA.innerHTML = baseHtml;
+                    const baseWidth = rssTickerA.scrollWidth || 100;
+                    const viewportWidth = rssTicker.clientWidth || window.innerWidth || 1200;
+                    const repeatCount = computeRepeatCount(baseWidth, viewportWidth);
+
+                    const html = buildRssHTML(finalItems, repeatCount);
+                    setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+
+                    rssState.backoffMs = 0;
+                    rssState.lastTitles = finalItems.map(x => x.title).slice(0, 10);
+                } catch (e) {
+                    rssState.backoffMs = rssState.backoffMs ? Math.min(rssState.backoffMs * 2, 20 * 60 * 1000) : 2 * 60 * 1000;
+                    if (!rssState.lastTitles.length) {
+                        const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No data</span><span class="ticker__chg flat">(backoff)</span></span>`;
+                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+                    } else {
+                        recomputeTickerAnimations();
+                    }
+                } finally {
+                    rssState.inFlight = false;
+                }
+            }
+
+            function scheduleRssLoop(immediate = false) {
+                clearTimeout(rssState.timer);
+                if (!settings.rssTickerEnabled || !isAppVisible || isFrozen) return;
+
+                const saveData = navigator.connection && navigator.connection.saveData;
+                const baseMs = clamp(settings.rssRefreshSec, 300, 7200) * 1000;
+                const intervalMs = saveData ? Math.max(baseMs, 1800000) : baseMs;
+
+                const delay = immediate ? 100 : (rssState.backoffMs || intervalMs);
+                rssState.timer = setTimeout(async () => {
+                    await refreshRssTicker();
+                    scheduleRssLoop(false);
+                }, delay + Math.floor(Math.random() * 450));
+            }
+
+            function stopRssLoop() {
+                clearTimeout(rssState.timer);
+                rssState.timer = 0;
+                rssState.inFlight = false;
+            }
+
+            // ─────────────────────────────────────
+            // UI
+            // ─────────────────────────────────────
+            let settingsOpen = false;
+            let inactivityTimeout = 0;
+            let uiHidden = false;
+            let focusMode = false;
+
+            function toggleSettings() {
+                settingsOpen = !settingsOpen;
+                if (settingsOpen) {
+                    settingsPanel.classList.add("open");
+                    overlayBackdrop.classList.add("visible");
+                    resetInactivityTimer();
+                } else {
+                    settingsPanel.classList.remove("open");
+                    overlayBackdrop.classList.remove("visible");
+                }
+            }
+
+            function closeSettings() {
+                settingsOpen = false;
+                settingsPanel.classList.remove("open");
+                overlayBackdrop.classList.remove("visible");
+            }
+
+            function resetInactivityTimer() {
+                if (uiHidden) {
+                    body.classList.remove("ui-hidden");
+                    uiHidden = false;
+                }
+                clearTimeout(inactivityTimeout);
+                if (!focusMode && !settingsOpen) {
+                    inactivityTimeout = setTimeout(() => {
+                        if (!settingsOpen && !focusMode) {
+                            body.classList.add("ui-hidden");
+                            uiHidden = true;
+                        }
+                    }, 4000);
+                }
+            }
+
+            function toggleFullscreen() {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    const el = document.documentElement;
+                    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+                    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                    focusMode = true;
+                    body.classList.add("focus-mode");
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                    focusMode = false;
+                    body.classList.remove("focus-mode");
+                    resetInactivityTimer();
+                }
+            }
+
+            function renderCoinSourcesList() {
+                coinSourcesList.innerHTML = "";
+                const list = settings.marketCoins || [];
+
+                if (!list.length) {
+                    const div = document.createElement("div");
+                    div.className = "settings-note";
+                    div.textContent = "Нет добавленных монет. Введите имя выше.";
+                    coinSourcesList.appendChild(div);
+                    return;
+                }
+
+                for (const coin of list) {
+                    const row = document.createElement("div");
+                    row.className = "rss-item";
+
+                    const code = document.createElement("code");
+                    code.title = coin.id;
+                    code.textContent = `${coin.label} (${coin.symbol})`;
+
+                    const btn = document.createElement("button");
+                    btn.className = "btn-sm btn-danger";
+                    btn.textContent = "Remove";
+                    btn.addEventListener("click", () => {
+                        settings.marketCoins = (settings.marketCoins || []).filter(c => c.id !== coin.id);
+                        saveSettings();
+                        renderCoinSourcesList();
+                        scheduleMarketLoop(true);
+                    });
+
+                    row.appendChild(code);
+                    row.appendChild(btn);
+                    coinSourcesList.appendChild(row);
+                }
+            }
+
+            function renderProxySourcesList() {
+                proxySourcesList.innerHTML = "";
+                const list = settings.corsProxyList || [];
+
+                if (!list.length) {
+                    const div = document.createElement("div");
+                    div.className = "settings-note";
+                    div.textContent = "Список proxy пуст.";
+                    proxySourcesList.appendChild(div);
+                    return;
+                }
+
+                list.forEach((proxy, idx) => {
+                    const row = document.createElement("div");
+                    row.className = "rss-item";
+
+                    const code = document.createElement("code");
+                    code.title = proxy;
+                    code.textContent = (idx === settings.corsProxyIndex ? "✓ " : "") + proxy;
+
+                    const btn = document.createElement("button");
+                    btn.className = "btn-sm btn-danger";
+                    btn.textContent = "Remove";
+                    btn.addEventListener("click", () => {
+                        settings.corsProxyList = (settings.corsProxyList || []).filter(p => p !== proxy);
+                        if (settings.corsProxyIndex >= settings.corsProxyList.length) settings.corsProxyIndex = 0;
+                        saveSettings();
+                        renderProxySourcesList();
+                    });
+
+                    row.appendChild(code);
+                    row.appendChild(btn);
+                    proxySourcesList.appendChild(row);
+                });
+            }
+
+            function renderRssSourcesList() {
+                rssSourcesList.innerHTML = "";
+                const list = (settings.rssSources || []).slice(0, 12);
+
+                if (!list.length) {
+                    const div = document.createElement("div");
+                    div.className = "settings-note";
+                    div.textContent = "No RSS sources. Add one above.";
+                    rssSourcesList.appendChild(div);
+                    return;
+                }
+
+                for (const src of list) {
+                    const row = document.createElement("div");
+                    row.className = "rss-item";
+
+                    const code = document.createElement("code");
+                    code.title = src;
+                    code.textContent = src;
+
+                    const btn = document.createElement("button");
+                    btn.className = "btn-sm btn-danger";
+                    btn.textContent = "Remove";
+                    btn.addEventListener("click", () => {
+                        settings.rssSources = (settings.rssSources || []).filter(x => x !== src);
+                        saveSettings();
+                        renderRssSourcesList();
+                        scheduleRssLoop(true);
+                    });
+
+                    row.appendChild(code);
+                    row.appendChild(btn);
+                    rssSourcesList.appendChild(row);
+                }
+            }
+
+            function updateUIStates() {
+                btnSound.querySelector("span").textContent = settings.soundEnabled ? "🔊" : "🔇";
+                btnSound.classList.toggle("active", !!settings.soundEnabled);
+
+                btnMode.querySelector("span").textContent = settings.sweepMode ? "◎" : "⏲";
+                btnMode.classList.toggle("active", !!settings.sweepMode);
+
+                document.getElementById("toggleSweep").classList.toggle("on", !!settings.sweepMode);
+                document.getElementById("toggleSound").classList.toggle("on", !!settings.soundEnabled);
+                document.getElementById("toggleRoman").classList.toggle("on", !!settings.romanNumerals);
+                document.getElementById("toggleTicks").classList.toggle("on", !!settings.showTicks);
+
+                document.getElementById("sizeSlider").value = settings.clockSize;
+                document.getElementById("sizeVal").textContent = settings.clockSize + "%";
+                document.getElementById("thicknessSlider").value = settings.handThickness;
+                document.getElementById("thicknessVal").textContent = settings.handThickness + "%";
+                document.getElementById("shadowSlider").value = settings.shadowIntensity;
+                document.getElementById("shadowVal").textContent = settings.shadowIntensity + "%";
+                document.getElementById("reflectionSlider").value = settings.reflectionIntensity;
+                document.getElementById("reflectionVal").textContent = settings.reflectionIntensity + "%";
+                document.getElementById("volumeSlider").value = settings.soundVolume;
+                document.getElementById("volumeVal").textContent = settings.soundVolume + "%";
+
+                toggleMarketTicker.classList.toggle("on", !!settings.marketTickerEnabled);
+                toggleRssTicker.classList.toggle("on", !!settings.rssTickerEnabled);
+                toggleBonusAssets.classList.toggle("on", !!settings.bonusAssetsEnabled);
+
+                toggleProxy.classList.toggle("on", !!settings.corsProxyEnabled);
+                toggleForceAnim.classList.toggle("on", !!settings.forceTickerAnimation);
+
+                tickerScaleSlider.value = settings.tickerScale;
+                tickerScaleVal.textContent = settings.tickerScale + "%";
+                marketSpeedSlider.value = settings.marketSpeed;
+                marketSpeedVal.textContent = String(settings.marketSpeed);
+                rssSpeedSlider.value = settings.rssSpeed;
+                rssSpeedVal.textContent = String(settings.rssSpeed);
+
+                vsCurrencySelect.value = settings.marketVsCurrency;
+
+                marketRefreshSlider.value = settings.marketRefreshSec;
+                marketRefreshVal.textContent = settings.marketRefreshSec + "s";
+                rssRefreshSlider.value = settings.rssRefreshSec;
+                rssRefreshVal.textContent = settings.rssRefreshSec + "s";
+
+                renderRssSourcesList();
+                renderCoinSourcesList();
+                renderProxySourcesList();
+                applyTickerVarsToDOM();
+            }
+
+            // ─────────────────────────────────────
+            // EVENTS
+            // ─────────────────────────────────────
+            btnSettings.addEventListener("click", toggleSettings);
+            btnFullscreen.addEventListener("click", toggleFullscreen);
+
+            btnSound.addEventListener("click", async () => {
+                settings.soundEnabled = !settings.soundEnabled;
+                saveSettings();
+                updateUIStates();
+                await unlockAudioFromGesture();
+            });
+
+            btnMode.addEventListener("click", () => {
+                settings.sweepMode = !settings.sweepMode;
+                lastSecondTick = -1;
+                lastSweepSubTick = -1;
+                saveSettings();
+                updateUIStates();
+            });
+
+            document.getElementById("btnCloseSettings").addEventListener("click", closeSettings);
+            overlayBackdrop.addEventListener("click", closeSettings);
+
+            colorPicker.addEventListener("input", (e) => {
+                settings.accentColor = e.target.value;
+                applyColorToDOM();
+                saveSettings();
+            });
+
+            document.getElementById("btnResetColor").addEventListener("click", () => {
+                settings.accentColor = DEFAULT_COLOR;
+                applyColorToDOM();
+                saveSettings();
+            });
+
+            document.getElementById("toggleSweep").addEventListener("click", () => {
+                settings.sweepMode = !settings.sweepMode;
+                lastSecondTick = -1;
+                lastSweepSubTick = -1;
+                saveSettings();
+                updateUIStates();
+            });
+
+            document.getElementById("toggleSound").addEventListener("click", async () => {
+                settings.soundEnabled = !settings.soundEnabled;
+                saveSettings();
+                updateUIStates();
+                await unlockAudioFromGesture();
+            });
+
+            document.getElementById("toggleRoman").addEventListener("click", () => {
+                settings.romanNumerals = !settings.romanNumerals;
+                invalidateCache();
+                saveSettings();
+                updateUIStates();
+            });
+
+            document.getElementById("toggleTicks").addEventListener("click", () => {
+                settings.showTicks = !settings.showTicks;
+                invalidateCache();
+                saveSettings();
+                updateUIStates();
+            });
+
+            document.getElementById("sizeSlider").addEventListener("input", (e) => {
+                settings.clockSize = parseInt(e.target.value, 10);
+                document.getElementById("sizeVal").textContent = settings.clockSize + "%";
+                invalidateCache();
+                saveSettings();
+            });
+
+            document.getElementById("thicknessSlider").addEventListener("input", (e) => {
+                settings.handThickness = parseInt(e.target.value, 10);
+                document.getElementById("thicknessVal").textContent = settings.handThickness + "%";
+                invalidateCache();
+                saveSettings();
+            });
+
+            document.getElementById("shadowSlider").addEventListener("input", (e) => {
+                settings.shadowIntensity = parseInt(e.target.value, 10);
+                document.getElementById("shadowVal").textContent = settings.shadowIntensity + "%";
+                invalidateCache();
+                saveSettings();
+            });
+
+            document.getElementById("reflectionSlider").addEventListener("input", (e) => {
+                settings.reflectionIntensity = parseInt(e.target.value, 10);
+                document.getElementById("reflectionVal").textContent = settings.reflectionIntensity + "%";
+                invalidateCache();
+                saveSettings();
+            });
+
+            document.getElementById("volumeSlider").addEventListener("input", (e) => {
+                settings.soundVolume = parseInt(e.target.value, 10);
+                document.getElementById("volumeVal").textContent = settings.soundVolume + "%";
+                saveSettings();
+            });
+
+            tickerScaleSlider.addEventListener("input", (e) => {
+                settings.tickerScale = parseInt(e.target.value, 10);
+                tickerScaleVal.textContent = settings.tickerScale + "%";
+                saveSettings();
+                applyTickerVarsToDOM();
+                recomputeTickerAnimations();
+                if (settings.marketTickerEnabled) scheduleMarketLoop(true);
+                if (settings.rssTickerEnabled) scheduleRssLoop(true);
+            });
+
+            toggleMarketTicker.addEventListener("click", () => {
+                settings.marketTickerEnabled = !settings.marketTickerEnabled;
+                saveSettings();
+                updateUIStates();
+                requestAnimationFrame(() => {
+                    recomputeTickerAnimations();
+                    if (settings.marketTickerEnabled) scheduleMarketLoop(true);
+                    else stopMarketLoop();
+                });
+            });
+
+            toggleRssTicker.addEventListener("click", () => {
+                settings.rssTickerEnabled = !settings.rssTickerEnabled;
+                saveSettings();
+                updateUIStates();
+                requestAnimationFrame(() => {
+                    recomputeTickerAnimations();
+                    if (settings.rssTickerEnabled) scheduleRssLoop(true);
+                    else stopRssLoop();
+                });
+            });
+
+            toggleBonusAssets.addEventListener("click", () => {
+                settings.bonusAssetsEnabled = !settings.bonusAssetsEnabled;
+                saveSettings();
+                updateUIStates();
+                scheduleMarketLoop(true);
+            });
+
+            btnAddCoin.addEventListener("click", async () => {
+                const q = (coinAddInput.value || "").trim();
+                if (!q) return;
+                coinSearchStatus.textContent = "Поиск…";
+                btnAddCoin.disabled = true;
+                try {
+                    const found = await searchCoinGecko(q);
+                    const exists = (settings.marketCoins || []).some(c => c.id === found.id);
+                    if (!exists) {
+                        settings.marketCoins = [...(settings.marketCoins || []), {
+                            id: found.id,
+                            symbol: (found.symbol || found.id).toUpperCase(),
+                            label: found.name || found.id
+                        }].slice(0, 10);
+                        saveSettings();
+                        renderCoinSourcesList();
+                        scheduleMarketLoop(true);
+                        coinSearchStatus.textContent = "Добавлено: " + (found.name || found.id);
+                    } else {
+                        coinSearchStatus.textContent = "Уже добавлено: " + (found.name || found.id);
+                    }
+                    coinAddInput.value = "";
+                } catch (e) {
+                    coinSearchStatus.textContent = "Не найдено: " + q + " (проверь название/тикер)";
+                } finally {
+                    btnAddCoin.disabled = false;
+                }
+            });
+
+            coinAddInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") btnAddCoin.click();
+            });
+
+            vsCurrencySelect.addEventListener("change", () => {
+                settings.marketVsCurrency = vsCurrencySelect.value;
+                saveSettings();
+                scheduleMarketLoop(true);
+            });
+
+            marketSpeedSlider.addEventListener("input", (e) => {
+                settings.marketSpeed = parseInt(e.target.value, 10);
+                marketSpeedVal.textContent = String(settings.marketSpeed);
+                saveSettings();
+                recomputeTickerAnimations();
+            });
+
+            rssSpeedSlider.addEventListener("input", (e) => {
+                settings.rssSpeed = parseInt(e.target.value, 10);
+                rssSpeedVal.textContent = String(settings.rssSpeed);
+                saveSettings();
+                recomputeTickerAnimations();
+            });
+
+            marketRefreshSlider.addEventListener("input", (e) => {
+                settings.marketRefreshSec = parseInt(e.target.value, 10);
+                marketRefreshVal.textContent = settings.marketRefreshSec + "s";
+                saveSettings();
+                scheduleMarketLoop(true);
+            });
+
+            rssRefreshSlider.addEventListener("input", (e) => {
+                settings.rssRefreshSec = parseInt(e.target.value, 10);
+                rssRefreshVal.textContent = settings.rssRefreshSec + "s";
+                saveSettings();
+                scheduleRssLoop(true);
+            });
+
+            toggleProxy.addEventListener("click", () => {
+                settings.corsProxyEnabled = !settings.corsProxyEnabled;
+                saveSettings();
+                updateUIStates();
+                scheduleMarketLoop(true);
+                scheduleRssLoop(true);
+            });
+
+            toggleForceAnim.addEventListener("click", () => {
+                settings.forceTickerAnimation = !settings.forceTickerAnimation;
+                saveSettings();
+                updateUIStates();
+                recomputeTickerAnimations();
+                resumeTickersIfAllowed();
+            });
+
+            btnAddProxy.addEventListener("click", () => {
+                const val = (proxyAddInput.value || "").trim();
+                if (!val || val.length < 8) return;
+                const set = new Set(settings.corsProxyList || []);
+                set.add(val);
+                settings.corsProxyList = Array.from(set).slice(0, 8);
+                proxyAddInput.value = "";
+                saveSettings();
+                renderProxySourcesList();
+                scheduleMarketLoop(true);
+                scheduleRssLoop(true);
+            });
+
+            proxyAddInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") btnAddProxy.click();
+            });
+
+            btnResetProxies.addEventListener("click", () => {
+                settings.corsProxyList = [...defaultSettings.corsProxyList];
+                settings.corsProxyIndex = 0;
+                saveSettings();
+                renderProxySourcesList();
+                scheduleMarketLoop(true);
+                scheduleRssLoop(true);
+            });
+
+            btnAddRss.addEventListener("click", () => {
+                const val = (rssAddInput.value || "").trim();
+                if (!val) return;
+                try {
+                    const normalized = normalizeUrl(val);
+                    const set = new Set((settings.rssSources || []).map(String));
+                    set.add(normalized);
+                    settings.rssSources = Array.from(set).slice(0, 12);
+                    rssAddInput.value = "";
+                    saveSettings();
+                    renderRssSourcesList();
+                    scheduleRssLoop(true);
+                } catch {
+                    rssAddInput.style.borderColor = "rgba(239, 68, 68, 0.9)";
+                    setTimeout(() => { rssAddInput.style.borderColor = ""; }, 450);
+                }
+            });
+
+            rssAddInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") btnAddRss.click();
+            });
+
+            document.addEventListener("keydown", async (e) => {
+                if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT")) return;
+
+                const key = e.key.toLowerCase();
+                if (key === "t") {
+                    settings.sweepMode = !settings.sweepMode;
+                    lastSecondTick = -1;
+                    lastSweepSubTick = -1;
+                    saveSettings();
+                    updateUIStates();
+                } else if (key === "f") {
+                    if (!e.ctrlKey && !e.metaKey) toggleFullscreen();
+                } else if (key === "m") {
+                    settings.soundEnabled = !settings.soundEnabled;
+                    saveSettings();
+                    updateUIStates();
+                    await unlockAudioFromGesture();
+                } else if (key === "escape") {
+                    if (settingsOpen) closeSettings();
+                    if (focusMode) toggleFullscreen();
+                }
+
+                resetInactivityTimer();
+                await unlockAudioFromGesture();
+            });
+
+            ["mousemove", "mousedown", "touchmove"].forEach(evt => {
+                document.addEventListener(evt, () => resetInactivityTimer(), { passive: true });
+            });
+
+            ["pointerdown", "touchstart", "click"].forEach(evt => {
+                document.addEventListener(evt, () => unlockAudioFromGesture(), { passive: true });
+            });
+
+            const exitFullscreenHandler = () => {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    focusMode = false;
+                    body.classList.remove("focus-mode");
+                    resetInactivityTimer();
+                }
+            };
+            document.addEventListener("fullscreenchange", exitFullscreenHandler);
+            document.addEventListener("webkitfullscreenchange", exitFullscreenHandler);
+
+            // Pinch zoom
+            let pinchStartDist = 0;
+            let pinchStartScale = 1;
+
+            canvasContainer.addEventListener("touchstart", (e) => {
+                if (e.touches.length === 2) {
+                    pinchStartDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    pinchStartScale = settings.userScale;
+                }
+            }, { passive: true });
+
+            canvasContainer.addEventListener("touchmove", (e) => {
+                if (e.touches.length === 2 && pinchStartDist > 0) {
+                    const currentDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const scaleChange = currentDist / pinchStartDist;
+                    settings.userScale = Math.max(0.5, Math.min(2.5, pinchStartScale * scaleChange));
+                    invalidateCache();
+                    saveSettings();
+                }
+            }, { passive: true });
+
+            canvasContainer.addEventListener("touchend", () => { pinchStartDist = 0; });
+
+            // Resize observers
+            if ("ResizeObserver" in window) {
+                const ro = new ResizeObserver(() => resizeCanvasIfNeeded());
+                ro.observe(canvasContainer);
+            }
+            window.addEventListener("resize", () => {
+                resizeCanvasIfNeeded();
+                recomputeTickerAnimations();
+            }, { passive: true });
+
+            if (document.fonts && typeof document.fonts.ready?.then === "function") {
+                document.fonts.ready.then(() => recomputeTickerAnimations()).catch(() => {});
+            }
+
+            // ─────────────────────────────────────
+            // Lifecycle (battery/network safety)
+            // ─────────────────────────────────────
+            function startNetworkLoops() {
+                if (!isAppVisible || isFrozen) return;
+                if (settings.marketTickerEnabled) scheduleMarketLoop(true);
+                if (settings.rssTickerEnabled) scheduleRssLoop(true);
+            }
+            function stopNetworkLoops() {
+                stopMarketLoop();
+                stopRssLoop();
+            }
+
+            function onHidden() {
+                isAppVisible = false;
+                pauseTickers();
+                stopNetworkLoops();
+                stopRenderLoop();
+                suspendAudio();
+            }
+
+            function onVisible() {
+                isAppVisible = true;
+                lastSecondTick = -1;
+                lastSweepSubTick = -1;
+                if (audioUnlocked && audioCtx && audioCtx.state === "suspended") {
+                    audioCtx.resume().catch(() => {});
+                }
+                resumeTickersIfAllowed();
+                startRenderLoop();
+                startNetworkLoops();
+                recomputeTickerAnimations();
+            }
+
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) onHidden();
+                else onVisible();
+            });
+
+            document.addEventListener("freeze", () => {
+                isFrozen = true;
+                pauseTickers();
+                stopNetworkLoops();
+                stopRenderLoop();
+                suspendAudio();
+            });
+
+            document.addEventListener("resume", () => {
+                isFrozen = false;
+                if (!document.hidden) onVisible();
+            });
+
+            window.addEventListener("pagehide", () => onHidden());
+            window.addEventListener("online", () => {
+                if (!document.hidden && !isFrozen) startNetworkLoops();
+            });
+
+            // ─────────────────────────────────────
+            // INIT
+            // ─────────────────────────────────────
+            function init() {
+                applyColorToDOM();
+                applyTickerVarsToDOM();
+				renderSessionBarStatic();
+                updateSessionBarNow(new Date());
+                updateUIStates();
+
+                resizeCanvasIfNeeded();
+                canvasContainer.classList.add("calibrating");
+
+                renderClock();
+                startRenderLoop();
+                resetInactivityTimer();
+
+                if (settings.marketTickerEnabled) {
+                    const html = `<span class="ticker__item"><span class="ticker__sym">MARKET</span><span class="ticker__price">Loading…</span><span class="ticker__chg flat">(—)</span></span>`;
+                    setTickerContent(marketTicker, marketTickerTrack, marketTickerA, marketTickerB, html, settings.marketSpeed);
+                }
+                if (settings.rssTickerEnabled) {
+                    const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">Loading…</span><span class="ticker__chg flat">(—)</span></span>`;
+                    setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+                }
+
+                resumeTickersIfAllowed();
+                startNetworkLoops();
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>
