@@ -1917,22 +1917,37 @@
             // ─────────────────────────────────────
             const marketState = { timer: 0, backoffMs: 0, lastItems: [], inFlight: false };
 
-            const bonusSymbols = [
+			const bonusSymbols = [
 				// Энергоносители
-				{ symbol: "BZ=F", label: "Brent Crude" },
-				{ symbol: "CL=F", label: "WTI Crude" },
-
-				// Драгоценные и промышленные металлы
-				{ symbol: "GC=F", label: "Gold" },
-				{ symbol: "SI=F", label: "Silver" },
-				{ symbol: "PL=F", label: "Platinum" },
-				{ symbol: "PA=F", label: "Palladium" },
-				{ symbol: "HG=F", label: "Copper" },
-
-				// Главные фондовые индексы (Спот / Текущие значения)
-				{ symbol: "^GSPC", label: "S&P 500" },
-				{ symbol: "^DJI", label: "Dow Jones" },
-				{ symbol: "^RUT", label: "Russell 2000 (Small Cap)" }
+				{ symbol: "BZ=F", label: "Brent Crude", stooq: "oilbrent" },
+				{ symbol: "CL=F", label: "WTI Crude", stooq: "oilwti" },
+				{ symbol: "NG=F", label: "Natural Gas", stooq: "natgas" },
+				
+				// Драгоценные металлы
+				{ symbol: "GC=F", label: "Gold", stooq: "gold" },
+				{ symbol: "SI=F", label: "Silver", stooq: "silver" },
+				{ symbol: "PL=F", label: "Platinum", stooq: "platinum" },
+				{ symbol: "PA=F", label: "Palladium", stooq: "pallad" },
+				
+				// Промышленные металлы
+				{ symbol: "HG=F", label: "Copper", stooq: "copper" },
+				{ symbol: "AL=F", label: "Aluminum", stooq: "aluminum" },
+				{ symbol: "ZN=F", label: "Zinc", stooq: "zinc" },
+				
+				// Сельхоз товары
+				{ symbol: "ZW=F", label: "Wheat", stooq: "wheat" },
+				{ symbol: "ZC=F", label: "Corn", stooq: "corn" },
+				{ symbol: "ZS=F", label: "Soybeans", stooq: "soybean" },
+				{ symbol: "KC=F", label: "Coffee", stooq: "coffee" },
+				{ symbol: "CT=F", label: "Cotton", stooq: "cotton" },
+				
+				// Фондовые индексы
+				{ symbol: "^GSPC", label: "S&P 500", stooq: "sp500" },
+				{ symbol: "^DJI", label: "Dow Jones", stooq: "dji" },
+				{ symbol: "^IXIC", label: "NASDAQ", stooq: "nasdaq" },
+				{ symbol: "^RUT", label: "Russell 2000", stooq: "russell2000" },
+				{ symbol: "^FTSE", label: "FTSE 100", stooq: "ftse100" },
+				{ symbol: "^GDAXI", label: "DAX", stooq: "dax" }
 			];
 
             function formatCurrency(value, currency) {
@@ -2085,11 +2100,14 @@
 			}
 
 			async function fetchYahooDailyChange(symbol) {
-				// Попытка 1: Yahoo через прокси (может упасть)
+				const asset = bonusSymbols.find(b => b.symbol === symbol);
+				const stooqSymbol = asset ? asset.stooq : null;
+				
+				// Попытка 1: Yahoo Finance через прокси (может упасть из-за CORS)
 				try {
 					const s = encodeURIComponent(symbol);
 					const url = `https://query1.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
-					const txt = await fetchTextSmart(url, { timeoutMs: 10000, preferProxy: true });
+					const txt = await fetchTextSmart(url, { timeoutMs: 8000, preferProxy: true });
 
 					let dataText = txt;
 					try {
@@ -2105,12 +2123,57 @@
 							const lastClose = closes[closes.length - 1];
 							const prevClose = closes[closes.length - 2];
 							const pct = ((lastClose - prevClose) / prevClose) * 100;
-							return { price: lastClose, changePct: pct };
+							return { price: lastClose, changePct: pct, source: "Yahoo" };
 						}
 					}
 				} catch (e) {
-					console.warn('[Luxury Clock] Yahoo failed for', symbol, e);
+					console.warn('[Yahoo] Failed for', symbol, e.message);
 				}
+				
+				// Попытка 2: Stooq CSV API (работает БЕЗ прокси, CORS открыт!)
+				if (stooqSymbol) {
+					try {
+						const url = `https://stooq.com/f/?h=${stooqSymbol}&s=${stooqSymbol}`;
+						const res = await fetchWithTimeout(url, { timeoutMs: 5000 });
+						if (res.ok) {
+							const text = await res.text();
+							const lines = text.trim().split('\n');
+							if (lines.length >= 2) {
+								// Формат: symbol,date,time,open,high,low,close,volume
+								const cols = lines[1].split(',');
+								if (cols.length >= 7) {
+									const price = parseFloat(cols[6]);
+									// Stooq отдает только текущую цену, без изменения
+									return { price: price, changePct: 0, source: "Stooq" };
+								}
+							}
+						}
+					} catch (e) {
+						console.warn('[Stooq] Failed for', stooqSymbol, e.message);
+					}
+				}
+				
+				// Попытка 3: Twelve Data API (free tier: 8 запросов/мин)
+				// Требуется API ключ, но можно использовать публичный endpoint для теста
+				try {
+					const tdSymbol = symbol.replace('^', '').replace('=F', '');
+					const url = `https://api.twelvedata.com/price?symbol=${tdSymbol}&apikey=demo`;
+					const res = await fetchWithTimeout(url, { timeoutMs: 4000 });
+					if (res.ok) {
+						const data = await res.json();
+						if (data.price) {
+							return { price: parseFloat(data.price), changePct: 0, source: "TwelveData" };
+						}
+					}
+				} catch (e) {
+					console.warn('[TwelveData] Failed for', symbol, e.message);
+				}
+				
+				// Попытка 4: Fallback на Alpha Vantage (требует API ключ)
+				// Пропускаем, так как нужен ключ
+				
+				throw new Error('All sources failed for ' + symbol);
+			}
 				
 				// Попытка 2: Fallback на Stooq (работает без прокси, CORS открыт)
 				try {
@@ -2172,26 +2235,35 @@
                         }
                     }
 
-                    if (settings.bonusAssetsEnabled) {
-                        for (const b of bonusSymbols) {
-                            try {
-                                const v = await fetchYahooDailyChange(b.symbol);
-                                const cls = v.changePct > 0 ? "up" : (v.changePct < 0 ? "down" : "flat");
-                                items.push({
-                                    label: b.label,
-                                    symbol: b.label,
-                                    priceText: Number.isFinite(v.price)
-                                        ? new Intl.NumberFormat(undefined, { maximumFractionDigits: v.price >= 1000 ? 0 : 2 }).format(v.price)
-                                        : "N/A",
-                                    changeText: formatPct(v.changePct),
-                                    changeClass: cls
-                                });
-                            } catch {
-                                items.push({ label: b.label, symbol: b.label, priceText: "N/A", changeText: "—", changeClass: "flat" });
-                            }
-                            await sleep(150); // Be gentle with proxy
-                        }
-                    }
+					if (settings.bonusAssetsEnabled) {
+						for (const b of bonusSymbols) {
+							try {
+								const v = await fetchYahooDailyChange(b.symbol);
+								const cls = v.changePct > 0 ? "up" : (v.changePct < 0 ? "down" : "flat");
+								items.push({
+									label: b.label,
+									symbol: b.label,
+									priceText: Number.isFinite(v.price)
+										? new Intl.NumberFormat(undefined, { maximumFractionDigits: v.price >= 1000 ? 0 : 2 }).format(v.price)
+										: "N/A",
+									changeText: formatPct(v.changePct),
+									changeClass: cls,
+									meta: v.source ? `[${v.source}]` : ""
+								});
+							} catch (e) {
+								console.warn('[Bonus] Failed for', b.label, e);
+								items.push({ 
+									label: b.label, 
+									symbol: b.label, 
+									priceText: "N/A", 
+									changeText: "—", 
+									changeClass: "flat",
+									meta: "[Failed]"
+								});
+							}
+							await sleep(200); // Чуть больше задержка для стабильности
+						}
+					}
 
                     if (!items.length) throw new Error("No coins configured");
 
