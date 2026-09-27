@@ -1119,6 +1119,106 @@
                     .slice(0, 12);
             }
 
+            // ─────────────────────────────────────
+            // NETWORK HELPERS (должны быть определены ПЕРЕД бизнес-логикой)
+            // ─────────────────────────────────────
+            function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+            async function fetchWithTimeout(url, opts = {}) {
+                const timeoutMs = clamp(opts.timeoutMs || 9000, 2000, 20000);
+                const controller = new AbortController();
+                const id = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    return await fetch(url, {
+                        method: "GET",
+                        cache: "no-store",
+                        credentials: "omit",
+                        referrerPolicy: "no-referrer",
+                        redirect: "follow",
+                        signal: controller.signal
+                    });
+                } finally {
+                    clearTimeout(id);
+                }
+            }
+
+            function buildProxyUrlAt(originalUrl, idx) {
+                const list = settings.corsProxyList || [];
+                const base = (list[idx] || "").trim();
+                if (!base) return "";
+                
+                const encoded = encodeURIComponent(originalUrl);
+                
+                if (base.includes('allorigins.win') || base.includes('codetabs.com') || base.includes('corsproxy.io')) {
+                    if (base.endsWith('=') || base.endsWith('?')) {
+                        return base + encoded;
+                    }
+                    return base + "url=" + encoded;
+                }
+                
+                if (base.endsWith('=') || base.endsWith('?') || base.endsWith('/')) {
+                    return base + encoded;
+                }
+                return base + "?url=" + encoded;
+            }
+
+            async function fetchViaProxyRotation(originalUrl, timeoutMs) {
+                const list = settings.corsProxyList || [];
+                if (!list.length) throw new Error("No proxies configured");
+                const startIdx = clamp(settings.corsProxyIndex, 0, list.length - 1);
+                let lastErr = null;
+
+                for (let step = 0; step < list.length; step++) {
+                    const idx = (startIdx + step) % list.length;
+                    const proxyUrl = buildProxyUrlAt(originalUrl, idx);
+                    if (!proxyUrl) continue;
+                    try {
+                        const res = await fetchWithTimeout(proxyUrl, { timeoutMs: Math.max(12000, timeoutMs) });
+                        if (!res.ok) throw new Error("Proxy HTTP " + res.status);
+                        const text = await res.text();
+                        if (idx !== settings.corsProxyIndex) {
+                            settings.corsProxyIndex = idx;
+                            saveSettings();
+                        }
+                        return text;
+                    } catch (e) {
+                        lastErr = e;
+                    }
+                }
+                throw lastErr || new Error("All proxies failed");
+            }
+
+            async function fetchTextSmart(url, { timeoutMs = 9000, preferProxy = false } = {}) {
+                if (!isAppVisible || isFrozen) throw new Error("Hidden/Frozen: network disabled");
+                if (!navigator.onLine) throw new Error("Offline");
+
+                if (preferProxy && settings.corsProxyEnabled) {
+                    return await fetchViaProxyRotation(url, timeoutMs);
+                }
+
+                try {
+                    const resD = await fetchWithTimeout(url, { timeoutMs });
+                    if (!resD.ok) throw new Error("HTTP " + resD.status);
+                    return await resD.text();
+                } catch (e) {
+                    if (!settings.corsProxyEnabled) throw e;
+                    return await fetchViaProxyRotation(url, timeoutMs);
+                }
+            }
+
+            async function fetchJsonSmart(url, { timeoutMs = 9000 } = {}) {
+                const txt = await fetchTextSmart(url, { timeoutMs });
+                try {
+                    const proxyData = JSON.parse(txt);
+                    if (proxyData && proxyData.contents) {
+                        try { return JSON.parse(proxyData.contents); } catch (e) {}
+                    }
+                    return proxyData;
+                } catch (e) {
+                    throw new Error("Invalid JSON");
+                }
+            }
+
             function loadSettings() {
                 try {
                     const stored = localStorage.getItem(STORAGE_KEY);
@@ -1613,109 +1713,6 @@
                 renderLoopRunning = false;
                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
                 animationFrameId = 0;
-            }
-
-            // ─────────────────────────────────────
-            // NETWORK HELPERS
-            // ─────────────────────────────────────
-            function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-            async function fetchWithTimeout(url, opts = {}) {
-                const timeoutMs = clamp(opts.timeoutMs || 9000, 2000, 20000);
-                const controller = new AbortController();
-                const id = setTimeout(() => controller.abort(), timeoutMs);
-                try {
-                    return await fetch(url, {
-                        method: "GET",
-                        cache: "no-store",
-                        credentials: "omit",
-                        referrerPolicy: "no-referrer",
-                        redirect: "follow",
-                        signal: controller.signal
-                    });
-                } finally {
-                    clearTimeout(id);
-                }
-            }
-
-			function buildProxyUrlAt(originalUrl, idx) {
-				const list = settings.corsProxyList || [];
-				const base = (list[idx] || "").trim();
-				if (!base) return "";
-				
-				const encoded = encodeURIComponent(originalUrl);
-				
-				// allorigins и codetabs требуют url=
-				if (base.includes('allorigins.win') || base.includes('codetabs.com') || base.includes('corsproxy.io')) {
-					if (base.endsWith('=') || base.endsWith('?')) {
-						return base + encoded;
-					}
-					return base + "url=" + encoded;
-				}
-				
-				// Fallback
-				if (base.endsWith('=') || base.endsWith('?') || base.endsWith('/')) {
-					return base + encoded;
-				}
-				return base + "?url=" + encoded;
-			}
-
-            async function fetchViaProxyRotation(originalUrl, timeoutMs) {
-                const list = settings.corsProxyList || [];
-                if (!list.length) throw new Error("No proxies configured");
-                const startIdx = clamp(settings.corsProxyIndex, 0, list.length - 1);
-                let lastErr = null;
-
-                for (let step = 0; step < list.length; step++) {
-                    const idx = (startIdx + step) % list.length;
-                    const proxyUrl = buildProxyUrlAt(originalUrl, idx);
-                    if (!proxyUrl) continue;
-                    try {
-                        const res = await fetchWithTimeout(proxyUrl, { timeoutMs: Math.max(12000, timeoutMs) });
-                        if (!res.ok) throw new Error("Proxy HTTP " + res.status);
-                        const text = await res.text();
-                        if (idx !== settings.corsProxyIndex) {
-                            settings.corsProxyIndex = idx;
-                            saveSettings();
-                        }
-                        return text;
-                    } catch (e) {
-                        lastErr = e;
-                    }
-                }
-                throw lastErr || new Error("All proxies failed");
-            }
-
-            async function fetchTextSmart(url, { timeoutMs = 9000, preferProxy = false } = {}) {
-                if (!isAppVisible || isFrozen) throw new Error("Hidden/Frozen: network disabled");
-                if (!navigator.onLine) throw new Error("Offline");
-
-                if (preferProxy && settings.corsProxyEnabled) {
-                    return await fetchViaProxyRotation(url, timeoutMs);
-                }
-
-                try {
-                    const resD = await fetchWithTimeout(url, { timeoutMs });
-                    if (!resD.ok) throw new Error("HTTP " + resD.status);
-                    return await resD.text();
-                } catch (e) {
-                    if (!settings.corsProxyEnabled) throw e;
-                    return await fetchViaProxyRotation(url, timeoutMs);
-                }
-            }
-
-            async function fetchJsonSmart(url, { timeoutMs = 9000 } = {}) {
-                const txt = await fetchTextSmart(url, { timeoutMs });
-                // Some proxies wrap json in { contents: "..." }
-                try {
-                    const proxyData = JSON.parse(txt);
-                    if (proxyData && proxyData.contents) {
-                        try { return JSON.parse(proxyData.contents); } catch (e) {}
-                    }
-                    return proxyData;
-                } catch (e) {
-                    throw new Error("Invalid JSON");
-                }
             }
 
             // ─────────────────────────────────────
@@ -2371,6 +2368,35 @@
                 return parts.join("");
             }
 
+            async function fetchHNStories() {
+                try {
+                    const res = await fetchWithTimeout('https://hacker-news.firebaseio.com/v0/topstories.json', { timeoutMs: 5000 });
+                    if (!res.ok) throw new Error('HN Firebase HTTP ' + res.status);
+                    
+                    const ids = await res.json();
+                    const top5 = ids.slice(0, 5);
+                    
+                    const stories = await Promise.all(
+                        top5.map(id => 
+                            fetchWithTimeout(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { timeoutMs: 3000 })
+                                .then(r => r.json())
+                                .catch(() => null)
+                        )
+                    );
+                    
+                    return stories
+                        .filter(item => item && item.title)
+                        .map(item => ({
+                            title: item.title,
+                            link: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
+                            ts: item.time ? item.time * 1000 : Date.now()
+                        }));
+                } catch (e) {
+                    console.warn('[HN Firebase] Failed:', e);
+                    return [];
+                }
+            }
+
 			async function refreshRssTicker() {
 				if (!settings.rssTickerEnabled || !isAppVisible || isFrozen || rssState.inFlight) return;
 				rssState.inFlight = true;
@@ -2391,14 +2417,12 @@
 						if (!isAppVisible || isFrozen) break;
 						
 						try {
-							// СПЕЦИАЛЬНАЯ ОБРАБОТКА: Hacker News через Firebase API (БЕЗ прокси!)
 							if (src.includes('news.ycombinator.com')) {
 								const hnItems = await fetchHNStories();
 								for (const it of hnItems) all.push(it);
 								continue;
 							}
 							
-							// Обычные RSS через прокси
 							const xml = await fetchTextSmart(src, { timeoutMs: 12000, preferProxy: true });
 							const parsed = parseFeed(xml).slice(0, 12);
 							for (const it of parsed) all.push(it);
