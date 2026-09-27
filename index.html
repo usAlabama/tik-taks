@@ -2172,38 +2172,6 @@
 				throw new Error('All sources failed for ' + symbol);
 			}
 				
-				// Попытка 2: Fallback на Stooq (работает без прокси, CORS открыт)
-				try {
-					// Stooq требует CSV формат, символы в нижнем регистре
-					let stooqSymbol = symbol.toLowerCase().replace('^', '');
-					if (symbol === '^GSPC') stooqSymbol = 'sp500';
-					else if (symbol === '^DJI') stooqSymbol = 'dji';
-					else if (symbol === 'GC=F') stooqSymbol = 'gold';
-					else if (symbol === 'SI=F') stooqSymbol = 'silver';
-					else if (symbol === 'CL=F') stooqSymbol = 'oilwti';
-					else if (symbol === 'BZ=F') stooqSymbol = 'oilbrent';
-					
-					const res = await fetchWithTimeout(`https://stooq.com/f/?h=${stooqSymbol}&s=${stooqSymbol}`, { timeoutMs: 6000 });
-					if (res.ok) {
-						const text = await res.text();
-						// Парсим CSV: symbol,date,time,open,high,low,close,volume
-						const lines = text.trim().split('\n');
-						if (lines.length >= 2) {
-							const cols = lines[1].split(',');
-							if (cols.length >= 7) {
-								const price = parseFloat(cols[6]);
-								// Для change нужен предыдущий день, вернем 0
-								return { price: price, changePct: 0 };
-							}
-						}
-					}
-				} catch (e) {
-					console.warn('[Luxury Clock] Stooq fallback failed for', symbol, e);
-				}
-				
-				throw new Error('All sources failed for ' + symbol);
-			}
-
             async function refreshMarketTicker() {
                 if (!settings.marketTickerEnabled || !isAppVisible || isFrozen || marketState.inFlight) return;
                 marketState.inFlight = true;
@@ -2473,37 +2441,6 @@
 					}
 				} finally {
 					rssState.inFlight = false;
-				}
-			}
-
-			// НОВАЯ ФУНКЦИЯ: Парсинг Hacker News через Firebase API (работает БЕЗ прокси!)
-			async function fetchHNStories() {
-				try {
-					// Firebase API HN - CORS открыт, работает напрямую!
-					const res = await fetchWithTimeout('https://hacker-news.firebaseio.com/v0/topstories.json', { timeoutMs: 5000 });
-					if (!res.ok) throw new Error('HN Firebase HTTP ' + res.status);
-					
-					const ids = await res.json();
-					const top5 = ids.slice(0, 5); // Берем только топ-5, чтобы не спамить
-					
-					const stories = await Promise.all(
-						top5.map(id => 
-							fetchWithTimeout(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { timeoutMs: 3000 })
-								.then(r => r.json())
-								.catch(() => null)
-						)
-					);
-					
-					return stories
-						.filter(item => item && item.title)
-						.map(item => ({
-							title: item.title,
-							link: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
-							ts: item.time ? item.time * 1000 : Date.now()
-						}));
-				} catch (e) {
-					console.warn('[HN Firebase] Failed:', e);
-					return [];
 				}
 			}
 
