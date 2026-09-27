@@ -1037,11 +1037,9 @@
 
                 corsProxyEnabled: true,
 				corsProxyList: [
-					"https://corsproxy.org/?",
-					"https://cors.x2u.in/?",
-					"https://cors.me/?",
-					"https://proxy.cors.sh/",
-					"https://api.allorigins.win/get?url="
+					"https://api.allorigins.win/get?url=",
+					"https://api.codetabs.com/v1/proxy?quest=",
+					"https://corsproxy.io/?url="
 				],
                 corsProxyIndex: 0
             };
@@ -1644,17 +1642,22 @@
 				const list = settings.corsProxyList || [];
 				const base = (list[idx] || "").trim();
 				if (!base) return "";
+				
 				const encoded = encodeURIComponent(originalUrl);
-				if (base.endsWith("=") || base.endsWith("?") || base.endsWith("/")) {
-					return base + encoded;
-				}
-				if (base.includes("corsproxy.org") || base.includes("cors.x2u.in") || base.includes("cors.me")) {
+				
+				// allorigins и codetabs требуют url=
+				if (base.includes('allorigins.win') || base.includes('codetabs.com') || base.includes('corsproxy.io')) {
+					if (base.endsWith('=') || base.endsWith('?')) {
+						return base + encoded;
+					}
 					return base + "url=" + encoded;
 				}
-				if (base.includes("proxy.cors.sh")) {
-					return base + originalUrl;
+				
+				// Fallback
+				if (base.endsWith('=') || base.endsWith('?') || base.endsWith('/')) {
+					return base + encoded;
 				}
-				return base + encoded;
+				return base + "?url=" + encoded;
 			}
 
             async function fetchViaProxyRotation(originalUrl, timeoutMs) {
@@ -2296,76 +2299,117 @@
                 return parts.join("");
             }
 
-            async function refreshRssTicker() {
-                if (!settings.rssTickerEnabled || !isAppVisible || isFrozen || rssState.inFlight) return;
-                rssState.inFlight = true;
+			async function refreshRssTicker() {
+				if (!settings.rssTickerEnabled || !isAppVisible || isFrozen || rssState.inFlight) return;
+				rssState.inFlight = true;
 
-                try {
-                    const sources = (settings.rssSources || []).slice(0, 12);
-                    if (!sources.length) {
-                        const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No sources</span><span class="ticker__chg flat">(add in settings)</span></span>`;
-                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
-                        rssState.lastTitles = [];
-                        rssState.backoffMs = 0;
-                        return;
-                    }
+				try {
+					const sources = (settings.rssSources || []).slice(0, 12);
+					if (!sources.length) {
+						const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No sources</span><span class="ticker__chg flat">(add in settings)</span></span>`;
+						setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+						rssState.lastTitles = [];
+						rssState.backoffMs = 0;
+						return;
+					}
 
-                    const all = [];
-                    for (const src of sources) {
-                        if (!isAppVisible || isFrozen) break;
-                        try {
-                            const xml = await fetchTextSmart(src, { timeoutMs: 12000, preferProxy: true });
-                            const parsed = parseFeed(xml).slice(0, 12);
-                            for (const it of parsed) all.push(it);
-                        } catch {
-                            // skip broken feed silently
-                        }
-                        await sleep(140);
-                    }
+					const all = [];
+					
+					for (const src of sources) {
+						if (!isAppVisible || isFrozen) break;
+						
+						try {
+							// СПЕЦИАЛЬНАЯ ОБРАБОТКА: Hacker News через Firebase API (БЕЗ прокси!)
+							if (src.includes('news.ycombinator.com')) {
+								const hnItems = await fetchHNStories();
+								for (const it of hnItems) all.push(it);
+								continue;
+							}
+							
+							// Обычные RSS через прокси
+							const xml = await fetchTextSmart(src, { timeoutMs: 12000, preferProxy: true });
+							const parsed = parseFeed(xml).slice(0, 12);
+							for (const it of parsed) all.push(it);
+						} catch (e) {
+							console.warn('[RSS] Failed to fetch:', src, e);
+						}
+						await sleep(140);
+					}
 
-                    const seen = new Set();
-                    const uniq = [];
-                    for (const it of all) {
-                        const key = (it.title || "") + "||" + (it.link || "");
-                        if (seen.has(key)) continue;
-                        seen.add(key);
-                        uniq.push(it);
-                    }
+					const seen = new Set();
+					const uniq = [];
+					for (const it of all) {
+						const key = (it.title || "") + "||" + (it.link || "");
+						if (seen.has(key)) continue;
+						seen.add(key);
+						uniq.push(it);
+					}
 
-                    uniq.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-                    const finalItems = uniq.slice(0, 50);
+					uniq.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+					const finalItems = uniq.slice(0, 50);
 
-                    if (!finalItems.length) {
-                        const repeated = buildRssHTML([{ title: "No items (check proxy / sources)", link: "" }], 10);
-                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, repeated, settings.rssSpeed);
-                        rssState.lastTitles = [];
-                        rssState.backoffMs = 0;
-                        return;
-                    }
+					if (!finalItems.length) {
+						const repeated = buildRssHTML([{ title: "No items (check proxy / sources)", link: "" }], 10);
+						setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, repeated, settings.rssSpeed);
+						rssState.lastTitles = [];
+						rssState.backoffMs = 0;
+						return;
+					}
 
-                    const baseHtml = buildRssHTML(finalItems, 1);
-                    rssTickerA.innerHTML = baseHtml;
-                    const baseWidth = rssTickerA.scrollWidth || 100;
-                    const viewportWidth = rssTicker.clientWidth || window.innerWidth || 1200;
-                    const repeatCount = computeRepeatCount(baseWidth, viewportWidth);
+					const baseHtml = buildRssHTML(finalItems, 1);
+					rssTickerA.innerHTML = baseHtml;
+					const baseWidth = rssTickerA.scrollWidth || 100;
+					const viewportWidth = rssTicker.clientWidth || window.innerWidth || 1200;
+					const repeatCount = computeRepeatCount(baseWidth, viewportWidth);
 
-                    const html = buildRssHTML(finalItems, repeatCount);
-                    setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+					const html = buildRssHTML(finalItems, repeatCount);
+					setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
 
-                    rssState.backoffMs = 0;
-                    rssState.lastTitles = finalItems.map(x => x.title).slice(0, 10);
-                } catch (e) {
-                    rssState.backoffMs = rssState.backoffMs ? Math.min(rssState.backoffMs * 2, 20 * 60 * 1000) : 2 * 60 * 1000;
-                    if (!rssState.lastTitles.length) {
-                        const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No data</span><span class="ticker__chg flat">(backoff)</span></span>`;
-                        setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
-                    } else {
-                        recomputeTickerAnimations();
-                    }
-                } finally {
-                    rssState.inFlight = false;
-                }
-            }
+					rssState.backoffMs = 0;
+					rssState.lastTitles = finalItems.map(x => x.title).slice(0, 10);
+				} catch (e) {
+					rssState.backoffMs = rssState.backoffMs ? Math.min(rssState.backoffMs * 2, 20 * 60 * 1000) : 2 * 60 * 1000;
+					if (!rssState.lastTitles.length) {
+						const html = `<span class="ticker__item"><span class="ticker__sym">RSS</span><span class="ticker__price">No data</span><span class="ticker__chg flat">(backoff)</span></span>`;
+						setTickerContent(rssTicker, rssTickerTrack, rssTickerA, rssTickerB, html, settings.rssSpeed);
+					} else {
+						recomputeTickerAnimations();
+					}
+				} finally {
+					rssState.inFlight = false;
+				}
+			}
+
+			// НОВАЯ ФУНКЦИЯ: Парсинг Hacker News через Firebase API (работает БЕЗ прокси!)
+			async function fetchHNStories() {
+				try {
+					// Firebase API HN - CORS открыт, работает напрямую!
+					const res = await fetchWithTimeout('https://hacker-news.firebaseio.com/v0/topstories.json', { timeoutMs: 5000 });
+					if (!res.ok) throw new Error('HN Firebase HTTP ' + res.status);
+					
+					const ids = await res.json();
+					const top5 = ids.slice(0, 5); // Берем только топ-5, чтобы не спамить
+					
+					const stories = await Promise.all(
+						top5.map(id => 
+							fetchWithTimeout(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { timeoutMs: 3000 })
+								.then(r => r.json())
+								.catch(() => null)
+						)
+					);
+					
+					return stories
+						.filter(item => item && item.title)
+						.map(item => ({
+							title: item.title,
+							link: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
+							ts: item.time ? item.time * 1000 : Date.now()
+						}));
+				} catch (e) {
+					console.warn('[HN Firebase] Failed:', e);
+					return [];
+				}
+			}
 
             function scheduleRssLoop(immediate = false) {
                 clearTimeout(rssState.timer);
