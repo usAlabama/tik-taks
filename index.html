@@ -2100,12 +2100,31 @@
 				const asset = bonusSymbols.find(b => b.symbol === symbol);
 				const stooqSymbol = asset ? asset.stooq : null;
 				
-				// Попытка 1: Yahoo Finance через прокси (может упасть из-за CORS)
+				// Попытка 1: Finnhub API (работает БЕЗ прокси, CORS открыт!)
+				// Бесплатный tier: 60 запросов/мин, ключ 'demo' работает для основных символов
+				try {
+					const finnhubSymbol = symbol.replace('^', '').replace('=F', '');
+					const url = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=demo`;
+					const res = await fetchWithTimeout(url, { timeoutMs: 5000 });
+					if (res.ok) {
+						const data = await res.json();
+						if (data.c && data.d) {
+							const price = data.c; // current price
+							const change = data.d; // change
+							const changePct = data.dp; // change percent
+							return { price: price, changePct: changePct, source: "Finnhub" };
+						}
+					}
+				} catch (e) {
+					console.warn('[Finnhub] Failed for', symbol, e.message);
+				}
+				
+				// Попытка 2: Yahoo Finance через query2 (может работать без прокси)
 				try {
 					const s = encodeURIComponent(symbol);
-					const url = `https://query1.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
-					const txt = await fetchTextSmart(url, { timeoutMs: 8000, preferProxy: true });
-
+					const url = `https://query2.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
+					const txt = await fetchTextSmart(url, { timeoutMs: 8000, preferProxy: false });
+					
 					let dataText = txt;
 					try {
 						const proxyData = JSON.parse(txt);
@@ -2127,47 +2146,29 @@
 					console.warn('[Yahoo] Failed for', symbol, e.message);
 				}
 				
-				// Попытка 2: Stooq CSV API (работает БЕЗ прокси, CORS открыт!)
-				if (stooqSymbol) {
+				// Попытка 3: CoinGecko для токензированных активов (золото = PAXG)
+				const cryptoMapping = {
+					'GC=F': 'pax-gold',      // Золото
+					'SI=F': 'silver',        // Серебро (если есть)
+					'XAU=F': 'pax-gold'      // Золото (альтернативный символ)
+				};
+				
+				if (cryptoMapping[symbol]) {
 					try {
-						const url = `https://stooq.com/f/?h=${stooqSymbol}&s=${stooqSymbol}`;
-						const res = await fetchWithTimeout(url, { timeoutMs: 5000 });
-						if (res.ok) {
-							const text = await res.text();
-							const lines = text.trim().split('\n');
-							if (lines.length >= 2) {
-								// Формат: symbol,date,time,open,high,low,close,volume
-								const cols = lines[1].split(',');
-								if (cols.length >= 7) {
-									const price = parseFloat(cols[6]);
-									// Stooq отдает только текущую цену, без изменения
-									return { price: price, changePct: 0, source: "Stooq" };
-								}
-							}
+						const cgId = cryptoMapping[symbol];
+						const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd&include_24hr_change=true`;
+						const data = await fetchJsonSmart(url, { timeoutMs: 6000 });
+						if (data && data[cgId]) {
+							return {
+								price: data[cgId].usd,
+								changePct: data[cgId].usd_24h_change || 0,
+								source: "CoinGecko"
+							};
 						}
 					} catch (e) {
-						console.warn('[Stooq] Failed for', stooqSymbol, e.message);
+						console.warn('[CoinGecko] Failed for', symbol, e.message);
 					}
 				}
-				
-				// Попытка 3: Twelve Data API (free tier: 8 запросов/мин)
-				// Требуется API ключ, но можно использовать публичный endpoint для теста
-				try {
-					const tdSymbol = symbol.replace('^', '').replace('=F', '');
-					const url = `https://api.twelvedata.com/price?symbol=${tdSymbol}&apikey=demo`;
-					const res = await fetchWithTimeout(url, { timeoutMs: 4000 });
-					if (res.ok) {
-						const data = await res.json();
-						if (data.price) {
-							return { price: parseFloat(data.price), changePct: 0, source: "TwelveData" };
-						}
-					}
-				} catch (e) {
-					console.warn('[TwelveData] Failed for', symbol, e.message);
-				}
-				
-				// Попытка 4: Fallback на Alpha Vantage (требует API ключ)
-				// Пропускаем, так как нужен ключ
 				
 				throw new Error('All sources failed for ' + symbol);
 			}
