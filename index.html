@@ -1036,12 +1036,13 @@
                 forceTickerAnimation: true,
 
                 corsProxyEnabled: true,
-                corsProxyList: [
-                    "https://api.allorigins.win/raw?url=",
-                    "https://corsproxy.io/?url=",
-                    "https://api.codetabs.com/v1/proxy?quest=",
-                    "https://thingproxy.freeboard.io/fetch/"
-                ],
+				corsProxyList: [
+					"https://corsproxy.org/?",
+					"https://cors.x2u.in/?",
+					"https://cors.me/?",
+					"https://proxy.cors.sh/",
+					"https://api.allorigins.win/get?url="
+				],
                 corsProxyIndex: 0
             };
 
@@ -1639,12 +1640,22 @@
                 }
             }
 
-            function buildProxyUrlAt(originalUrl, idx) {
-                const list = settings.corsProxyList || [];
-                const base = (list[idx] || "").trim();
-                if (!base) return "";
-                return base + encodeURIComponent(originalUrl);
-            }
+			function buildProxyUrlAt(originalUrl, idx) {
+				const list = settings.corsProxyList || [];
+				const base = (list[idx] || "").trim();
+				if (!base) return "";
+				const encoded = encodeURIComponent(originalUrl);
+				if (base.endsWith("=") || base.endsWith("?") || base.endsWith("/")) {
+					return base + encoded;
+				}
+				if (base.includes("corsproxy.org") || base.includes("cors.x2u.in") || base.includes("cors.me")) {
+					return base + "url=" + encoded;
+				}
+				if (base.includes("proxy.cors.sh")) {
+					return base + originalUrl;
+				}
+				return base + encoded;
+			}
 
             async function fetchViaProxyRotation(originalUrl, timeoutMs) {
                 const list = settings.corsProxyList || [];
@@ -1965,54 +1976,170 @@
                 return parts.join("");
             }
 
-            async function fetchCoinGeckoMulti(coinIds, vsCurrency) {
-                if (!coinIds.length) return [];
-                const ids = encodeURIComponent(coinIds.join(","));
-                const vs = encodeURIComponent(vsCurrency);
-                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs}&ids=${ids}&price_change_percentage=24h`;
-                const data = await fetchJsonSmart(url, { timeoutMs: 9000 });
-                if (!Array.isArray(data)) throw new Error("CoinGecko: empty response");
-                return data.map(row => ({
-                    id: row.id,
-                    label: row.name || row.id,
-                    symbol: row.symbol ? row.symbol.toUpperCase() : String(row.id).toUpperCase(),
-                    price: Number(row.current_price),
-                    changePct: Number(row.price_change_percentage_24h),
-                    currency: vsCurrency
-                }));
-            }
+			async function fetchCoinGeckoMulti(coinIds, vsCurrency) {
+				if (!coinIds.length) return [];
+				
+				try {
+					// Binance Public API - работает напрямую, CORS открыт!
+					const res = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/24hr', { timeoutMs: 8000 });
+					if (!res.ok) throw new Error('Binance HTTP ' + res.status);
+					const allTickers = await res.json();
+					
+					// Маппинг CoinGecko ID → Binance Symbol
+					const idToSymbol = {
+						'bitcoin': 'BTCUSDT', 'ethereum': 'ETHUSDT', 'binancecoin': 'BNBUSDT',
+						'solana': 'SOLUSDT', 'ripple': 'XRPUSDT', 'cardano': 'ADAUSDT',
+						'dogecoin': 'DOGEUSDT', 'toncoin': 'TONUSDT', 'the-open-network': 'TONUSDT',
+						'tron': 'TRXUSDT', 'polkadot': 'DOTUSDT', 'chainlink': 'LINKUSDT',
+						'avalanche-2': 'AVAXUSDT', 'matic-network': 'MATICUSDT', 'litecoin': 'LTCUSDT'
+					};
+					
+					const results = [];
+					for (const id of coinIds) {
+						const symbol = idToSymbol[id.toLowerCase()] || (id.toUpperCase() + 'USDT');
+						const ticker = allTickers.find(t => t.symbol === symbol);
+						
+						if (ticker) {
+							results.push({
+								id: id,
+								label: id.charAt(0).toUpperCase() + id.slice(1),
+								symbol: symbol.replace('USDT', ''),
+								price: parseFloat(ticker.lastPrice),
+								changePct: parseFloat(ticker.priceChangePercent),
+								currency: 'usd' // Binance всегда в USDT
+							});
+						}
+					}
+					
+					return results;
+				} catch (e) {
+					console.warn('[Luxury Clock] Binance failed, fallback:', e);
+					// Fallback на CoinGecko через прокси (если Binance упал)
+					try {
+						const ids = encodeURIComponent(coinIds.join(","));
+						const vs = encodeURIComponent(vsCurrency);
+						const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs}&ids=${ids}&price_change_percentage=24h`;
+						const data = await fetchJsonSmart(url, { timeoutMs: 12000 });
+						if (!Array.isArray(data)) return [];
+						return data.map(row => ({
+							id: row.id, label: row.name || row.id,
+							symbol: row.symbol ? row.symbol.toUpperCase() : String(row.id).toUpperCase(),
+							price: Number(row.current_price),
+							changePct: Number(row.price_change_percentage_24h),
+							currency: vsCurrency
+						}));
+					} catch { return []; }
+				}
+			}
 
-            async function searchCoinGecko(query) {
-                const q = encodeURIComponent(query.trim());
-                if (!q) throw new Error("Empty query");
-                const url = `https://api.coingecko.com/api/v3/search?query=${q}`;
-                const data = await fetchJsonSmart(url, { timeoutMs: 9000 });
-                const coins = Array.isArray(data?.coins) ? data.coins : [];
-                if (!coins.length) throw new Error("Coin not found: " + query);
-                return coins[0];
-            }
+			async function searchCoinGecko(query) {
+				const q = query.trim().toLowerCase();
+				if (!q) throw new Error("Empty query");
+				
+				// Локальная база популярных монет (мгновенный поиск)
+				const knownCoins = [
+					{ id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
+					{ id: "ethereum", symbol: "ETH", name: "Ethereum" },
+					{ id: "binancecoin", symbol: "BNB", name: "BNB" },
+					{ id: "solana", symbol: "SOL", name: "Solana" },
+					{ id: "ripple", symbol: "XRP", name: "XRP" },
+					{ id: "cardano", symbol: "ADA", name: "Cardano" },
+					{ id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
+					{ id: "toncoin", symbol: "TON", name: "Toncoin" },
+					{ id: "tron", symbol: "TRX", name: "TRON" },
+					{ id: "polkadot", symbol: "DOT", name: "Polkadot" },
+					{ id: "chainlink", symbol: "LINK", name: "Chainlink" },
+					{ id: "avalanche-2", symbol: "AVAX", name: "Avalanche" },
+					{ id: "matic-network", symbol: "MATIC", name: "Polygon" },
+					{ id: "litecoin", symbol: "LTC", name: "Litecoin" },
+					{ id: "uniswap", symbol: "UNI", name: "Uniswap" },
+					{ id: "stellar", symbol: "XLM", name: "Stellar" },
+					{ id: "cosmos", symbol: "ATOM", name: "Cosmos" },
+					{ id: "near", symbol: "NEAR", name: "NEAR Protocol" },
+					{ id: "aptos", symbol: "APT", name: "Aptos" },
+					{ id: "sui", symbol: "SUI", name: "Sui" }
+				];
+				
+				const found = knownCoins.find(c => 
+					c.id === q || c.symbol.toLowerCase() === q || 
+					c.name.toLowerCase() === q || c.name.toLowerCase().includes(q)
+				);
+				
+				if (found) return found;
+				
+				// Если не нашли локально - пробуем CoinGecko API (с прокси)
+				try {
+					const encoded = encodeURIComponent(q);
+					const url = `https://api.coingecko.com/api/v3/search?query=${encoded}`;
+					const data = await fetchJsonSmart(url, { timeoutMs: 9000 });
+					const coins = Array.isArray(data?.coins) ? data.coins : [];
+					if (!coins.length) throw new Error("Coin not found: " + query);
+					return coins[0];
+				} catch (e) {
+					// Если CoinGecko тоже упал - создаём фейковую монету по тикеру
+					return { id: q, symbol: q.toUpperCase().slice(0, 8), name: q };
+				}
+			}
 
-            async function fetchYahooDailyChange(symbol) {
-                const s = encodeURIComponent(symbol);
-                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
-                const txt = await fetchTextSmart(url, { timeoutMs: 12000, preferProxy: true });
+			async function fetchYahooDailyChange(symbol) {
+				// Попытка 1: Yahoo через прокси (может упасть)
+				try {
+					const s = encodeURIComponent(symbol);
+					const url = `https://query1.finance.yahoo.com/v8/finance/chart/${s}?interval=1d&range=2d`;
+					const txt = await fetchTextSmart(url, { timeoutMs: 10000, preferProxy: true });
 
-                let dataText = txt;
-                try {
-                    const proxyData = JSON.parse(txt);
-                    if (proxyData && proxyData.contents) dataText = proxyData.contents;
-                } catch (e) {}
+					let dataText = txt;
+					try {
+						const proxyData = JSON.parse(txt);
+						if (proxyData && proxyData.contents) dataText = proxyData.contents;
+					} catch (e) {}
 
-                const json = JSON.parse(dataText);
-                const result = json.chart.result[0];
-                const closes = result.indicators.quote[0].close.filter(c => c !== null);
-                if (closes.length < 2) throw new Error("Yahoo: not enough data");
-
-                const lastClose = closes[closes.length - 1];
-                const prevClose = closes[closes.length - 2];
-                const pct = ((lastClose - prevClose) / prevClose) * 100;
-                return { price: lastClose, changePct: pct };
-            }
+					const json = JSON.parse(dataText);
+					if (json.chart && json.chart.result && json.chart.result[0]) {
+						const result = json.chart.result[0];
+						const closes = result.indicators.quote[0].close.filter(c => c !== null);
+						if (closes.length >= 2) {
+							const lastClose = closes[closes.length - 1];
+							const prevClose = closes[closes.length - 2];
+							const pct = ((lastClose - prevClose) / prevClose) * 100;
+							return { price: lastClose, changePct: pct };
+						}
+					}
+				} catch (e) {
+					console.warn('[Luxury Clock] Yahoo failed for', symbol, e);
+				}
+				
+				// Попытка 2: Fallback на Stooq (работает без прокси, CORS открыт)
+				try {
+					// Stooq требует CSV формат, символы в нижнем регистре
+					let stooqSymbol = symbol.toLowerCase().replace('^', '');
+					if (symbol === '^GSPC') stooqSymbol = 'sp500';
+					else if (symbol === '^DJI') stooqSymbol = 'dji';
+					else if (symbol === 'GC=F') stooqSymbol = 'gold';
+					else if (symbol === 'SI=F') stooqSymbol = 'silver';
+					else if (symbol === 'CL=F') stooqSymbol = 'oilwti';
+					else if (symbol === 'BZ=F') stooqSymbol = 'oilbrent';
+					
+					const res = await fetchWithTimeout(`https://stooq.com/f/?h=${stooqSymbol}&s=${stooqSymbol}`, { timeoutMs: 6000 });
+					if (res.ok) {
+						const text = await res.text();
+						// Парсим CSV: symbol,date,time,open,high,low,close,volume
+						const lines = text.trim().split('\n');
+						if (lines.length >= 2) {
+							const cols = lines[1].split(',');
+							if (cols.length >= 7) {
+								const price = parseFloat(cols[6]);
+								// Для change нужен предыдущий день, вернем 0
+								return { price: price, changePct: 0 };
+							}
+						}
+					}
+				} catch (e) {
+					console.warn('[Luxury Clock] Stooq fallback failed for', symbol, e);
+				}
+				
+				throw new Error('All sources failed for ' + symbol);
+			}
 
             async function refreshMarketTicker() {
                 if (!settings.marketTickerEnabled || !isAppVisible || isFrozen || marketState.inFlight) return;
