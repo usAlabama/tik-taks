@@ -1915,35 +1915,25 @@
             const marketState = { timer: 0, backoffMs: 0, lastItems: [], inFlight: false };
 
 			const bonusSymbols = [
-								// ЗОЛОТО — работает через Binance PAXG!
-				{ symbol: "GC=F", label: "Gold (PAXG)", stooq: "gold" },
-				// Серебро — может работать через CoinGecko
-				{ symbol: "SI=F", label: "Silver", stooq: "silver" }
-				// Остальные (нефть, газ, индексы) убираем — нет бесплатных API
-				
 				// Энергоносители
 				{ symbol: "BZ=F", label: "Brent Crude", stooq: "oilbrent" },
 				{ symbol: "CL=F", label: "WTI Crude", stooq: "oilwti" },
 				{ symbol: "NG=F", label: "Natural Gas", stooq: "natgas" },
-				
 				// Драгоценные металлы
 				{ symbol: "GC=F", label: "Gold", stooq: "gold" },
 				{ symbol: "SI=F", label: "Silver", stooq: "silver" },
 				{ symbol: "PL=F", label: "Platinum", stooq: "platinum" },
 				{ symbol: "PA=F", label: "Palladium", stooq: "pallad" },
-				
 				// Промышленные металлы
 				{ symbol: "HG=F", label: "Copper", stooq: "copper" },
 				{ symbol: "AL=F", label: "Aluminum", stooq: "aluminum" },
 				{ symbol: "ZN=F", label: "Zinc", stooq: "zinc" },
-				
 				// Сельхоз товары
 				{ symbol: "ZW=F", label: "Wheat", stooq: "wheat" },
 				{ symbol: "ZC=F", label: "Corn", stooq: "corn" },
 				{ symbol: "ZS=F", label: "Soybeans", stooq: "soybean" },
 				{ symbol: "KC=F", label: "Coffee", stooq: "coffee" },
 				{ symbol: "CT=F", label: "Cotton", stooq: "cotton" },
-				
 				// Фондовые индексы
 				{ symbol: "^GSPC", label: "S&P 500", stooq: "sp500" },
 				{ symbol: "^DJI", label: "Dow Jones", stooq: "dji" },
@@ -2102,52 +2092,48 @@
 				}
 			}
 
-		async function fetchYahooDailyChange(symbol) {
-			// В 2026 году публичные API для commodities почти все мертвы.
-			// Используем Binance для токенизированного золота (PAXG), остальное — заглушки.
-			
-			const asset = bonusSymbols.find(b => b.symbol === symbol);
-			if (!asset) throw new Error('Unknown symbol: ' + symbol);
-			
-			// ЗОЛОТО: используем PAXG (Pax Gold) через Binance API — работает БЕЗ прокси!
-			if (symbol === 'GC=F' || symbol === 'XAU=F') {
-				try {
-					const res = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', { timeoutMs: 5000 });
-					if (res.ok) {
-						const data = await res.json();
-						return {
-							price: parseFloat(data.lastPrice),
-							changePct: parseFloat(data.priceChangePercent),
-							source: "Binance PAXG"
-						};
+			async function fetchYahooDailyChange(symbol) {
+				const asset = bonusSymbols.find(b => b.symbol === symbol);
+				if (!asset) throw new Error('Unknown symbol: ' + symbol);
+				
+				// ЗОЛОТО: используем PAXG (Pax Gold) через Binance API
+				if (symbol === 'GC=F' || symbol === 'XAU=F') {
+					try {
+						const res = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', { timeoutMs: 5000 });
+						if (res.ok) {
+							const data = await res.json();
+							return {
+								price: parseFloat(data.lastPrice),
+								changePct: parseFloat(data.priceChangePercent),
+								source: "Binance PAXG"
+							};
+						}
+					} catch (e) {
+						console.warn('[Binance PAXG] Failed:', e.message);
 					}
-				} catch (e) {
-					console.warn('[Binance PAXG] Failed:', e.message);
 				}
-			}
-			
-			// СЕРЕБРО: пробуем через CoinGecko (может быть 429)
-			if (symbol === 'SI=F') {
-				try {
-					const url = 'https://api.coingecko.com/api/v3/simple/price?ids=silver&vs_currencies=usd&include_24hr_change=true';
-					const data = await fetchJsonSmart(url, { timeoutMs: 6000 });
-					if (data && data.silver) {
-						return {
-							price: data.silver.usd,
-							changePct: data.silver.usd_24h_change || 0,
-							source: "CoinGecko"
-						};
+				
+				// СЕРЕБРО: пробуем через CoinGecko
+				if (symbol === 'SI=F') {
+					try {
+						const url = 'https://api.coingecko.com/api/v3/simple/price?ids=silver&vs_currencies=usd&include_24hr_change=true';
+						const data = await fetchJsonSmart(url, { timeoutMs: 6000 });
+						if (data && data.silver) {
+							return {
+								price: data.silver.usd,
+								changePct: data.silver.usd_24h_change || 0,
+								source: "CoinGecko"
+							};
+						}
+					} catch (e) {
+						console.warn('[CoinGecko Silver] Failed:', e.message);
 					}
-				} catch (e) {
-					console.warn('[CoinGecko Silver] Failed:', e.message);
 				}
+				
+				// Для всех остальных (нефть, газ, металлы, индексы) — нет бесплатных API
+				console.warn(`[Commodities] No free API for ${symbol}`);
+				throw new Error('No free API for ' + symbol);
 			}
-			
-			// Для всех остальных (нефть, газ, металлы, индексы) — возвращаем заглушку
-			// В 2026 году бесплатных CORS-friendly API для них нет
-			console.warn(`[Commodities] No free API available for ${symbol} in 2026`);
-			throw new Error('No free API for ' + symbol);
-		}
 				
             async function refreshMarketTicker() {
                 if (!settings.marketTickerEnabled || !isAppVisible || isFrozen || marketState.inFlight) return;
